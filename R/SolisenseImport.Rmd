@@ -1,0 +1,432 @@
+---
+title: "Importing and tidying data from the Solisense"
+author:
+- Maximilian Berthold
+- Douglas A. Campbell
+date: "`r format(Sys.Date())`"
+output:
+  html_document:
+    df_print: paged
+    code_folding: hide
+    keep_md: yes
+    fig_caption: yes
+    toc: TRUE
+    toc_float: TRUE   
+csl: plos-one.csl
+---
+
+*Some of the code used to create this R Notebook was refurbished from "PlateAbImport.Rmd" written by Maximilian Berthold, Douglas A. Campbell, Melissa L. Rioux, Sarah J Gore, and Alyson MacCormack.*
+
+
+# Set Chunk Options
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+knitr::opts_chunk$set(fig.path='Figs/')
+```
+
+# Set Project Variables
+```{r set project variables}
+Project <- "FluorO2"
+DataOut <- file.path("..", "ProcessData")
+
+#Move catalog to Googlesheets?
+Catalog <- file.path("~/Dropbox/MURIS/MURIS_catalog.csv")
+#FileIDAb <- "Ab"
+FileIDSoli <- "_Soli_"
+FileReadSoli <- "Soli"
+#DataFolder <- "ProcessData"
+
+DataIn <- file.path("..", "RawData", "Solisense", fsep = .Platform$file.sep)
+
+FileID <- "fit"
+
+FileEncode <- "UTF-8" 
+Delimiter <- ","
+
+HeaderRows <- 0
+#AbsWL = c(440, 590, 680, 750) #select OD's of interest from plategrowth.Rds
+
+
+
+```
+
+
+```{r load libraries}
+library(tidyverse)
+library(lubridate)
+#library(magrittr)
+
+```
+
+
+```{r load local catalog, message = FALSE, warning = FALSE, echo=FALSE}
+#col_types specified for some columns as only the last few rows of a large dataset contained values for these columns and the values were not being read in properly
+#there is probably a more robust way to deal with this issue
+# MetaData <- read_csv("../MURIS_catalog.csv") %>%
+#   rename(CultureID = id)
+# 
+# MetaData <- MetaData %>%
+#   mutate(ExpSalinity = (((culture_inocul_L * source_salinity)+(media_inocul_L*salinity))/(culture_inocul_L+media_inocul_L)))
+# 
+# GrowthLong <- readRDS(file = file.path(DataFolder,paste(Project,FileIDAb, "GrowthLong.Rds", sep  = "_"),fsep = .Platform$file.sep)) %>%
+#   rename(CultureID = id, StartDateTimeInoc = datetime) %>%
+#   #filter(E_hours == '0') %>% #select only E-hour == 0, as starting point for plate inoculation and following Solisense-analyses
+#   filter(Wavelength %in% AbsWL) %>%
+#   mutate(ObsDate = format(StartDateTimeInoc, format = "%Y-%m-%d")) %>%
+#   mutate(ObsDate = ymd(ObsDate))
+# 
+# MetaGrowthData <- full_join(MetaData, GrowthLong) %>%
+#   filter(E_hours != 'NA')
+# 
+# MetaGrowthData <- MetaGrowthData %>%
+#   select(-c(OD, AvBlankOD, blank, plc, plc_vol)) %>%
+#   pivot_wider(values_from = CorrOD, names_from = Wavelength, names_prefix = "OD_")
+
+```
+
+
+```{r list PSI files for file import}
+SolisenseFiles <- list.files(path = DataIn, pattern = FileID, full.names = TRUE)
+SolisenseFiles
+
+#test for duplicate file names
+unique(duplicated(SolisenseFiles))
+```
+
+
+```{r data read adds filename and cdate, warning=FALSE, message=FALSE, echo=FALSE}
+#design choice 2 file reading functions or add a filetype variable to a single function
+#stringsAsFactors =FALSE somewhere? 
+
+read.delim_plus <- function(flnm, file_encode, delimiter, header_rows){read.delim(flnm, fileEncoding = file_encode, sep = delimiter,  skip = header_rows, row.names = NULL) %>% mutate(filename = flnm, cdatetime = ymd_hms(file.info(flnm)$ctime))
+}
+```
+
+Read Test File
+```{r read example Solisense file}
+TestFile <- read.delim_plus(flnm = "../RawData/Solisense/MURIS_202105121400_MaBe3414_445_caloxy_fit.csv", file_encode = FileEncode, delimiter = Delimiter, header_rows = HeaderRows)
+```
+
+purrr::map to read all files
+```{r}
+SolisenseFits <- SolisenseFiles %>%
+  map_df(~read.delim_plus(flnm =., file_encode = FileEncode, delimiter = Delimiter, header_rows = HeaderRows))
+```
+
+
+XXXXX
+
+##### only run, when new files were added, takes very long with >4500 files
+# memory.limit(size = 30000)
+# SolFit <- SolisenseFiles %>% map_df(~read.delim_plus(flnm = ., file_encode = FileEncode, delimiter = Delimiter, header_rows = HeaderRows))
+# saveRDS(SolFit, file.path(DataOut,
+# paste(Project, FileIDSoli <- "Soli", "SolisenseFiles.Rds", sep = "_"), fsep = .Platform$file.sep))
+
+SolFit <- readRDS(file = file.path(DataFolder,paste(Project, FileReadSoli, "SolisenseFiles.Rds", sep  = "_"),fsep = .Platform$file.sep)) 
+
+SolFitTrim <-SolFit %>% 
+  separate(col = filename, into = c("device", "project", "datetime", "CultureID","Ex_WL", "data", "csv"), sep = "([\\:\\/\\_\\.\\\\])", remove = FALSE) %>%
+  select(-c("device", "data", "csv"))  %>%
+  mutate(DATE = ymd(DATE), TIME = as.character(TIME))%>% #time-column is read in as factor, and as.character changes it to numeric; using lubdridate::hms would only change the format to 13H 4M 2S but does not work later one to merge into one DateTime-column
+  rename(ObsDate = DATE, ObsTime = TIME, FvFm = "Fv.Fm") %>%
+  mutate(datetime = as.numeric(datetime), Ex_WL = as.factor(as.numeric(Ex_WL))) %>%
+  mutate(FvFm = as.numeric(as.character(FvFm)), Light_1 = as.numeric(as.character(Light_1)), Light_5 = as.numeric(as.character(Light_5))) %>%
+  mutate(datetime = ymd_hm(datetime)) %>%
+  rename(StartDateTimeSol = datetime) %>%
+  drop_na(StartDateTimeSol)
+  
+
+SolFitTrim$ObsDateTime <- with(SolFitTrim, as.POSIXct(paste(ObsDate, ObsTime), format="%Y-%m-%d %H:%M:%S")) #correctly binds ObsDate and ObsTime into one DateTime-object
+
+SolFitTrim <- SolFitTrim %>%
+  mutate(ObsDateTime = ymd_hms(ObsDateTime))
+
+#Light steps of Ex445 and 590 are not aligned, as SOLISENSE protocol saved Light-levels of 445 in Light_1 and of 590 in Light_5
+
+SolFit_445 <- SolFitTrim %>%
+  filter(Ex_WL == 445) %>%
+  mutate(Light_steps = Light_1 + Light_5)
+
+SolFit_590 <- SolFitTrim %>%
+  filter(Ex_WL == 590) %>%
+  mutate(Light_steps = Light_1 + Light_5)
+
+SolFitAlign <- full_join(SolFit_590, SolFit_445)
+
+SolFitMeta <- right_join(SolFitAlign, MetaData)
+
+SolFitMetaGrowth <- right_join(SolFitAlign, MetaGrowthData, by = c("CultureID", "ObsDate")) %>%
+  mutate(EDays = E_hours/24)
+  #drop_na(StartDateTime) 
+
+saveRDS(SolFitMetaGrowth, file.path(DataOut, 
+paste(Project, "SolFit.Rds", sep = ""), fsep = .Platform$file.sep))
+
+
+SolFitETR <- SolFitMetaGrowth %>%
+  mutate(Sig = as.numeric(Sig), Light_steps = as.numeric(Light_steps), Tau1QA = as.numeric(Tau1QA)) %>%
+  mutate(Sig_m2 = Sig*1e-18, 
+         Tau1QA_s = Tau1QA/1000,
+         Light_steps_Photm2s = Light_steps*6.022e17) %>%
+  mutate(One_C = 1/(1+(Sig_m2*Light_steps_Photm2s*Tau1QA_s)), 
+         ETRTAU = Light_steps_Photm2s*Sig_m2*One_C)
+
+range(SolFitETR$One_C, na.rm = TRUE)
+range(SolFitETR$ETRTAU, na.rm = TRUE)
+range(SolFitETR$Tau1QA, na.rm = TRUE)
+
+SolFitETR %>%
+  ggplot() +
+  geom_point(aes(x = Light_steps, y = ETRTAU, color = par_ue)) +
+  facet_grid(cols = vars(as.factor(Ex_WL))) 
+
+```
+
+
+
+```{r}
+
+test3 <- test2 %>%
+  drop_na(Ex_WL, ObsDateTime)
+
+test4 <- rbind(test3, 
+               test3 %>% 
+                 filter(Light_steps == 320))
+
+test3 <- rbind(test2,
+      test2 %>% 
+        filter(Light_steps == 320)) %>%
+  arrange(ObsDateTime) %>%
+  group_by(Ex_WL, CultureID, StartDateTimeSol) %>%
+  nest() %>%
+  mutate(NoRow = map_dbl(data, nrow)) %>%
+  filter(NoRow != 22)
+
+test4 <- test2 %>%
+  distinct() %>%
+  group_by(Ex_WL, CultureID, StartDateTimeSol) %>%
+  nest() %>%
+  mutate(NoRow = map_dbl(data, nrow)) %>%
+  filter(NoRow != 21) %>%
+  drop_na(StartDateTimeSol)
+  
+    
+test6 <- test3 %>%
+  group_by(Ex_WL, CultureID, StartDateTimeSol) %>%
+  nest() %>%
+  mutate(NoRow = map_dbl(data, nrow))
+
+test4 <- test3 %>%
+  filter(NoRow != 22)
+ 
+test7 <- test6 %>%
+  filter(NoRow !=22)
+
+```
+
+
+
+```{r select light levels}
+
+
+#select first all 0-light measurements, select every n-th 0-position, as start value and store as index
+#select every 320-light measurement and store as index
+#filter every value that is equally smaller/larger then the value before/after to get increasing and decreasing light steps separated 
+#bind with 320-light measurements, and first/last 0-light measurement for total set of doubletap-experiment
+
+SolFitLightUP <- SolFitMetaGrowth %>%
+  filter(Light_steps > lag(Light_steps)) %>% #filter up to light step 160 and down again, filters out all 0 and 320
+   filter(Light_steps < lead(Light_steps)) #filter out second site of double tap protocol
+
+SolFitLight320 <- SolFitMetaGrowth %>%
+  filter(Light_steps == 320)
+
+SolFitLong <- rbind(SolFitLightUP, SolFitLight320) #bind light steps 320 and first site of double tap protocol
+
+SolFitShortUP <- SolFitMeta %>%
+  filter(Light_steps > lag(Light_steps)) %>% #filter up to light step 160 and down again, filters out all 0 and 320
+   filter(Light_steps < lead(Light_steps)) #filter out second site of double tap protocol
+
+SolFitShort320 <- SolFitMeta %>%
+  filter(Light_steps == 320)
+
+SolFitShort <- rbind(SolFitShortUP, SolFitShort320) %>%
+  group_by(exp_date, strain, source) %>% #group_by ExpDate and salinity to show replicated wells within one consecutive plot, even with different CultureID's
+   mutate(EHours = as.numeric((ObsDateTime - ObsDateTime[1])/3600)) %>%  #group by well, then filter light/dark FvFm, then filter max FvFm and compare to growth light
+   mutate(EDays = EHours/24) %>%
+   ungroup()
+
+# 
+# 
+# SolFitMeta <- SolFitMeta %>%
+#   group_by(exp_date, strain, source) %>% #group_by ExpDate and salinity to show replicated wells within one consecutive plot, even with different CultureID's
+#   mutate(EHours = as.numeric((ObsDateTime - ObsDateTime[1])/3600)) %>%  #group by well, then filter light/dark FvFm, then filter max FvFm and compare to growth light
+#   mutate(EDays = EHours/24) %>%
+#   ungroup()
+
+
+
+
+```
+
+
+
+```{r plot data}
+# ExpDate <- c(20200930)
+# EndDate <- c(20200910)
+# culture <- c('MaBe2004', 'MaBe2005', 'MaBe2006', 'MaBe2007', 'MaBe2008', 'MaBe2009')
+# Strains = c("CZS25K", "CCMP1333", "CCMP836", "NIES981", "CZS48M")
+# strain_source = c('AlMa1495')
+# Media = 'BG11+Na2CO3'
+# PAR = 160
+# Plate = c(163:165)
+
+cols = c(20:59)
+SolFitLong[,cols] %<>% lapply(function(x) as.numeric(as.character(x)))
+
+OneStrain = "CZS48M"
+LowLightStep = 40
+MedLightStep = 160
+HighLightStep = 320
+LowLight = 30
+MedLight = 150
+HighLight = 300
+PhoPhysVar = "Sigma"
+
+  
+PhotoPhysLowLight <- SolFitLong %>%
+  filter(strain == OneStrain) %>%
+  filter(Light_steps == LowLightStep) %>%
+  #filter(source_salinity == 36) %>%
+  mutate(par_ue = as.factor(par_ue)) %>%
+  filter(par_ue == LowLight) 
+
+PhotoPhysMedLight <- SolFitLong %>%
+  filter(strain == OneStrain) %>%
+  filter(Light_steps == MedLightStep) %>%
+  #filter(source_salinity == 36) %>%
+  mutate(par_ue = as.factor(par_ue)) %>%
+  filter(par_ue == MedLight)
+
+PhotoPhysHighLight <- SolFitLong %>%
+  filter(strain == OneStrain) %>%
+  filter(Light_steps == HighLightStep) %>%
+  #filter(source_salinity == 36) %>%
+  mutate(par_ue = as.factor(par_ue)) %>%
+  filter(par_ue == HighLight)
+
+PhotoPhysSal <- ggplot(PhotoPhysLowLight, aes(x = EDays, y = log10(Sig), colour = par_ue))+ 
+  geom_point() +
+  geom_point(data = PhotoPhysMedLight) + 
+  geom_point(data = PhotoPhysHighLight) +
+  facet_grid(rows = vars(Ex_WL), cols = vars(ExpSalinity)) +
+  labs(x = "elapsed days", y = PhoPhysVar) +
+  #ylim(0, 0.5) +
+  xlim(0, 14) +
+  theme_bw() +
+  labs(caption = paste("strain", OneStrain))
+ggsave(filename = file.path("Plots", paste(OneStrain, PhoPhysVar, "salinity.png", sep = "_"),fsep = .Platform$file.sep ), plot = PhotoPhysSal, height = 4, width = 6)
+
+
+
+```
+
+
+
+```{r}
+
+OneStrain = "CZS48M"
+LowLightStep = 40
+MedLightStep = 160
+HighLightStep = 320
+GrowthLightStep = 80
+GrowthLight = 100
+PhoPhysVar = "FvFm"
+
+PhotoPhysGrowthLight <- SolFitShort %>%
+  filter(strain == OneStrain) %>%
+  filter(CultureID == 'MaBe2341') %>%
+  filter(Light_steps == GrowthLightStep) %>%
+  #filter(source_salinity == 36) %>%
+  mutate(par_ue = as.factor(par_ue)) %>%
+  filter(par_ue == GrowthLight)
+
+test <- ggplot(PhotoPhysGrowthLight, aes(x = EHours, y = (FvFm), colour = as.factor(exp_date)))+ 
+  geom_point() +
+  facet_grid(rows = vars(Ex_WL), cols = vars(ExpSalinity)) 
+ggsave(filename = file.path("Plots", paste(OneStrain, PhoPhysVar, "short_salinity.png", sep = "_"),fsep = .Platform$file.sep ), plot = test, height = 4, width = 6)
+
+FemMcR1_450 <- SolFitShort %>%
+  #filter(exp_date == ExpDate) %>%
+  filter(Light_steps == GrowthLightStep) %>%
+  #filter(source == 'MaBe2341')
+  filter(CultureID == 'MaBe2341', Ex_WL == '445')
+
+FemEcSal_450 <- SolFitShort %>%
+  filter(Light_steps == GrowthLightStep, par_ue == GrowthLight) %>%
+  filter(source == 'MaBe2341', Ex_WL == '445')
+
+
+
+(plot2 <- ggplot(NULL, aes(EHours, FvFm, colour = as.factor(ExpSalinity))) + 
+      geom_line(data = FemMcR1_450) +
+      geom_line(data = FemEcSal_450) +
+      facet_grid(rows = vars(Ex_WL)) +
+      theme_bw()
+)
+
+FemMcR1_590 <- SolFitShort %>%
+  #filter(exp_date == ExpDate) %>%
+  filter(Light_steps == GrowthLightStep) %>%
+  #filter(source == 'MaBe2341')
+  filter(CultureID == 'MaBe2341', Ex_WL == '590')
+
+FemEcSal_590 <- SolFitShort %>%
+  filter(Light_steps == GrowthLightStep, par_ue == GrowthLight) %>%
+  filter(source == 'MaBe2341', Ex_WL == '590')
+
+(ggplot(FemEcSal_590, aes(EHours, FvFm, colour = as.factor(ExpSalinity))) + 
+      #geom_line(data = FemMcR1_590) +
+      geom_line(data = FemEcSal_450) +
+      geom_line(data = FemEcSal_590) +
+      geom_point(data = FemEcSal_590) +
+      geom_point(data = FemEcSal_450) +
+      xlim(0, 5) +
+      facet_grid(rows = vars(Ex_WL)) +
+      theme_bw()
+)
+
+EcSal_450 <- ggplot(FemEcSal_450, aes(EHours, FvFm, colour = as.factor(ExpSalinity))) + 
+      geom_line(data = FemEcSal_450) +
+      geom_point(data = FemEcSal_450) +
+      xlim(0, 5) +
+    ylim(0.2, 0.3) +
+      facet_grid(rows = vars(Ex_WL)) 
+EcSal_450
+
+EcSal_590 <- ggplot(FemEcSal_590, aes(EHours, FvFm, colour = as.factor(ExpSalinity))) + 
+      geom_line(data = FemEcSal_590) +
+      geom_point(data = FemEcSal_590) +
+      xlim(0, 5) +
+    ylim(0, 0.15) +
+      facet_grid(rows = vars(Ex_WL)) 
+
+ggplot() + EcSal_450 + EcSal_590
+
+(plot3 <- ggplot(NULL, aes(EHours, FvFm, colour = as.factor(ExpSalinity))) + 
+      #geom_line(data = FemMcR1_590) +
+      geom_point(data = FemEcSal_590) +
+      facet_grid(rows = vars(Ex_WL)) +
+      theme_bw()
+)
+```
+
+
+
+```{r save StrStiMeta, echo=FALSE}
+saveRDS(StrStiMeta, file.path(DataOut, 
+paste(Project, "PSIParametersStrSti.Rds", sep = ""), fsep = .Platform$file.sep))
+
+saveRDS(StrStiMeta, file.path(DataOut2, 
+paste(Project, "PSIParametersStrSti.Rds", sep = ""), fsep = .Platform$file.sep))
+```

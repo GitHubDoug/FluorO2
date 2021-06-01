@@ -1,5 +1,5 @@
 ---
-title: "Importing and tidying data from the Solisense"
+title: "Import and tidy data from the Solisense"
 author:
 - Maximilian Berthold
 - Douglas A. Campbell
@@ -30,7 +30,14 @@ Project <- "FluorO2"
 DataOut <- file.path("..", "ProcessData")
 
 #Move catalog to Googlesheets?
+#We need to figure out the catalog issue
 Catalog <- file.path("~/Dropbox/MURIS/MURIS_catalog.csv")
+
+# gs4_deauth()
+# ColonyData <- read_sheet(ColonyGoogleSheet)
+# 
+# ColonyData
+
 #FileIDAb <- "Ab"
 FileIDSoli <- "_Soli_"
 FileReadSoli <- "Soli"
@@ -55,6 +62,10 @@ HeaderRows <- 0
 library(tidyverse)
 library(lubridate)
 #library(magrittr)
+
+#https://googlesheets4.tidyverse.org/
+# library(googledrive)
+# library(googlesheets4)
 
 ```
 
@@ -84,6 +95,15 @@ library(lubridate)
 
 ```
 
+```{r set colours}
+Wavelengths_nm = c(445, 590)
+Colours_nm = c("dodgerblue", "darkorange")
+
+
+names(Colours_nm) <- Wavelengths_nm
+Colours_nm
+
+```
 
 ```{r list PSI files for file import}
 SolisenseFiles <- list.files(path = DataIn, pattern = FileID, full.names = TRUE)
@@ -100,47 +120,127 @@ unique(duplicated(SolisenseFiles))
 
 read.delim_plus <- function(flnm, file_encode, delimiter, header_rows){read.delim(flnm, fileEncoding = file_encode, sep = delimiter,  skip = header_rows, row.names = NULL) %>% mutate(filename = flnm, cdatetime = ymd_hms(file.info(flnm)$ctime))
 }
+
 ```
 
 Read Test File
 ```{r read example Solisense file}
+#issue with rows with --------;  easy to filter though
 TestFile <- read.delim_plus(flnm = "../RawData/Solisense/MURIS_202105121400_MaBe3414_445_caloxy_fit.csv", file_encode = FileEncode, delimiter = Delimiter, header_rows = HeaderRows)
+
 ```
 
 purrr::map to read all files
-```{r}
-SolisenseFits <- SolisenseFiles %>%
+```{r read Solisense files}
+SolFits <- SolisenseFiles %>%
   map_df(~read.delim_plus(flnm =., file_encode = FileEncode, delimiter = Delimiter, header_rows = HeaderRows))
 ```
 
 
-XXXXX
-
-##### only run, when new files were added, takes very long with >4500 files
-# memory.limit(size = 30000)
-# SolFit <- SolisenseFiles %>% map_df(~read.delim_plus(flnm = ., file_encode = FileEncode, delimiter = Delimiter, header_rows = HeaderRows))
+```{r save data}
 # saveRDS(SolFit, file.path(DataOut,
 # paste(Project, FileIDSoli <- "Soli", "SolisenseFiles.Rds", sep = "_"), fsep = .Platform$file.sep))
+```
 
-SolFit <- readRDS(file = file.path(DataFolder,paste(Project, FileReadSoli, "SolisenseFiles.Rds", sep  = "_"),fsep = .Platform$file.sep)) 
 
-SolFitTrim <-SolFit %>% 
-  separate(col = filename, into = c("device", "project", "datetime", "CultureID","Ex_WL", "data", "csv"), sep = "([\\:\\/\\_\\.\\\\])", remove = FALSE) %>%
-  select(-c("device", "data", "csv"))  %>%
-  mutate(DATE = ymd(DATE), TIME = as.character(TIME))%>% #time-column is read in as factor, and as.character changes it to numeric; using lubdridate::hms would only change the format to 13H 4M 2S but does not work later one to merge into one DateTime-column
+```{r tidy SolFitsTrim}
+#Think of better ways to do this
+SolFitsTrim <- SolFits %>% 
+  filter(!grepl("----", DATE)) %>% # remove rows with "----"
+  mutate(filename = str_remove(string = filename, pattern = ".csv")) %>%
+  mutate(filename = str_remove(string = filename, pattern = "../RawData/")) %>%
+  separate(filename, into = c("Device", "Project", "DateTime", "CultureID", "Ex_WL", "Exp_Type"), sep = "([\\/\\_\\_\\_\\_])", remove = FALSE) %>%
+  mutate(DATE = ymd(DATE),
+          TIME = as.character(TIME)) %>% #time-column is read in as factor, and as.character changes it to numeric; using lubdridate::hms would only change the format to 13H 4M 2S but does not work later one to merge into one DateTime-column
+  rename(ObsDate = DATE,
+         ObsTime = TIME,
+         FvFm = "Fv.Fm") %>%
+  mutate(DateTime = as.numeric(DateTime),
+         Ex_WL = as.factor(as.numeric(Ex_WL))) %>%
+  mutate(FvFm = as.numeric(as.character(FvFm)),
+         nm445 = as.numeric(as.character(Light_1)),
+         nm590 = as.numeric(as.character(Light_5))) %>%
+  mutate(datetime = ymd_hm(DateTime)) %>%
+  rename(StartDateTimeSol = DateTime) %>%
+  drop_na(StartDateTimeSol) %>%
+  mutate(ObsTime = hms(ObsTime)) %>%
+  mutate(ObsDateTime = ymd_hms(paste(ObsDate, ObsTime))) %>%
+  relocate(ObsDateTime, .after = ObsTime) %>%
+  relocate(CultureID, .before = ObsDate) 
+
+SolFitsTrim <- SolFitsTrim %>%
+  mutate(across(.cols = c(Light_1:p680Q), .fns = as.numeric)) %>%
+  mutate(ActPAR = Light_1 + Light_2 + Light_3 + Light_4 + Light_5 + Light_6) #better ways to do this?
+
+SolFitsTrim[1,]
+
+#drop superfluous empty columns
+SolFitsTrim <- SolFitsTrim %>%
+  select(-c("Lon", "Lat", "GPS_stat"))
+```
+
+
+
+```{r prelimplots}
+SolFitsTrim %>%
+  ggplot() +
+  geom_point(aes(x = ActPAR, y = FvFm, colour = Ex_WL)) +
+  scale_colour_manual(values = Colours_nm) +
+  facet_grid(cols = vars(Ex_WL), rows = vars(CultureID)) +
+  theme_bw()
+  
+#  
+```
+
+
+```{r estimate parameters}
+SolFitsTrim <- SolFitsTrim %>%
+  group_by(CultureID, Ex_WL, Source.DataFile) %>%
+  mutate(Fodark = Fo[1],
+         Fmdark = Fm[1],
+         aLHIIdark = (Fmdark * Fodark)/(Fmdark - Fodark),
+         Fomin = min(Fo, na.rm = TRUE),
+         Fmmax = max(Fm, na.rm = TRUE),
+         aLHIIminmax = (Fmmax * Fomin)/(Fmmax - Fomin))
+
+
+  #mutate(aLHII <- 
+```
+
+```{r prelimplots2}
+SolFitsTrim %>%
+  ggplot() +
+  geom_point(aes(x = ActPAR, y = aLHIIdark, colour = Ex_WL)) +
+  geom_point(aes(x = ActPAR, y = aLHIIminmax), shape = "cross") +
+  scale_colour_manual(values = Colours_nm) +
+  facet_grid(cols = vars(Ex_WL), rows = vars(CultureID)) +
+  theme_bw()
+  
+#  
+```
+
+XXXXXX
+
+
+
+ )%>% #time-column is read in as factor, and as.character changes it to numeric; using lubdridate::hms would only change the format to 13H 4M 2S but does not work later one to merge into one DateTime-column
   rename(ObsDate = DATE, ObsTime = TIME, FvFm = "Fv.Fm") %>%
   mutate(datetime = as.numeric(datetime), Ex_WL = as.factor(as.numeric(Ex_WL))) %>%
   mutate(FvFm = as.numeric(as.character(FvFm)), Light_1 = as.numeric(as.character(Light_1)), Light_5 = as.numeric(as.character(Light_5))) %>%
   mutate(datetime = ymd_hm(datetime)) %>%
   rename(StartDateTimeSol = datetime) %>%
   drop_na(StartDateTimeSol)
-  
 
-SolFitTrim$ObsDateTime <- with(SolFitTrim, as.POSIXct(paste(ObsDate, ObsTime), format="%Y-%m-%d %H:%M:%S")) #correctly binds ObsDate and ObsTime into one DateTime-object
+```{r read data from rds}
+###### only run, when new files were added, takes very long with >4500 files
 
-SolFitTrim <- SolFitTrim %>%
-  mutate(ObsDateTime = ymd_hms(ObsDateTime))
+# SolFit <- readRDS(file = file.path(DataFolder,paste(Project, FileReadSoli, "SolisenseFiles.Rds", sep  = "_"),fsep = .Platform$file.sep)) 
+```
 
+XXXXX
+
+
+ 
 #Light steps of Ex445 and 590 are not aligned, as SOLISENSE protocol saved Light-levels of 445 in Light_1 and of 590 in Light_5
 
 SolFit_445 <- SolFitTrim %>%

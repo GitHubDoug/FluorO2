@@ -201,7 +201,13 @@ SolFitsTrim <- SolFitsTrim %>%
          aLHIIdark = (Fmdark * Fodark)/(Fmdark - Fodark),
          Fomin = min(Fo, na.rm = TRUE),
          Fmmax = max(Fm, na.rm = TRUE),
-         aLHIIminmax = (Fmmax * Fomin)/(Fmmax - Fomin))
+         aLHIIminmax = (Fmmax * Fomin)/(Fmmax - Fomin),
+         Sig_m2psii = Sig/1E20,
+         ActPAR_photonsm2s = ActPAR *  6.022e17,
+         Ctau1 = 1/(1 + (Sig_m2psii * ActPAR_photonsm2s * (Tau1QA/1000000))),
+         Ctau2 = 1/(1 + (Sig_m2psii * ActPAR_photonsm2s * (Tau2QA/1000000))),
+         qp = (Fm - Fo)/(Fm -Fomin),
+         JVPSII_aLHIIminmax = ActPAR_photonsm2s * aLHIIminmax * FvFm)
 
 
   #mutate(aLHII <- 
@@ -215,6 +221,35 @@ SolFitsTrim %>%
   scale_colour_manual(values = Colours_nm) +
   facet_grid(cols = vars(Ex_WL), rows = vars(CultureID)) +
   theme_bw()
+
+SolFitsTrim %>%
+  ggplot() +
+  geom_point(aes(x = Ctau1, y = qp, colour = Ex_WL)) +
+  #geom_point(aes(x = ActPAR, y = aLHIIminmax), shape = "cross") +
+  scale_colour_manual(values = Colours_nm) +
+  facet_grid(cols = vars(Ex_WL), rows = vars(CultureID)) +
+  geom_abline(yintercept = 0, slope = 1, linetype = "dashed") + 
+  coord_fixed(ratio = 1) +
+  theme_bw()
+
+SolFitsTrim %>%
+  ggplot() +
+  geom_point(aes(x = Ctau2, y = qp, colour = Ex_WL)) +
+  #geom_point(aes(x = ActPAR, y = aLHIIminmax), shape = "cross") +
+  scale_colour_manual(values = Colours_nm) +
+  facet_grid(cols = vars(Ex_WL), rows = vars(CultureID)) +
+  geom_abline(yintercept = 0, slope = 1, linetype = "dashed") + 
+  coord_fixed(ratio = 1) +
+  theme_bw()
+
+SolFitsTrim %>%
+  ggplot() +
+  geom_point(aes(x = ActPAR, y = JVPSII_aLHIIminmax, colour = Ex_WL)) +
+  #geom_point(aes(x = ActPAR, y = aLHIIminmax), shape = "cross") +
+  scale_colour_manual(values = Colours_nm) +
+  facet_grid(cols = vars(Ex_WL), rows = vars(CultureID)) +
+  theme_bw()
+
   
 #  
 ```

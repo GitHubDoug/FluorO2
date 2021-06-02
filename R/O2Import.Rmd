@@ -1,27 +1,30 @@
 ---
 title: "O2ImportTidy"
-author: "Douglas A. Campbell, Max Berthold, Laurel Genge"
-date: "`r format(Sys.Date())`"
+author:
+
+- Douglas A. Campbell
+- Maximilian Berthold
+- Laurel Genge
 output:
   html_document:
     df_print: paged
+    code_folding: hide
+    keep_md: yes
+    fig_caption: yes
+    toc: TRUE
+    toc_float: TRUE
+csl: plos-one.csl
 ---
 
 ##Introduction
-
-##Hypotheses
- 1. change in oxygen and Reactive Oxygen Species concentrations differentially alter the growth of different strains of picophytoplankton derived from different ocean habitats
- 2. Reactive oxygen species stimulate growth of some picophytoplankton strains.
- 
-
+We use an optode to measure [O2] µmol l-1 in suspensions of phytoplankton.
+Changes in [O2] reflect (hopefully) oxygen evolution or oxygen consumption by the cell suspension.
 
 ## Materials and Methods
 
-This .Rmd Rworkbook imports data in simple .csv form exported from PSI Multicultivators based upon project specific values for variables set by the user.
+This .Rmd Rworkbook imports data in simple .csv form exported from FireSting optodes based upon project specific values for variables set by the user.
 
 It tidies and organizes the data.
-It imports a metadata Catalog and merges the metadata with the imported data from "Pico-> O2Data"
-
 
 To-Do list:
 
@@ -31,35 +34,32 @@ Need to match each run with date from catalog
 create preiminary graphs
 
 #Priority List
-Laurel:
 -single data file import for O2
 -multi-file batch data import (may not be fully feasible given we need match multiple files together in some cases)
 -O2 preliminary plots
 -merge O2 plots as over-lays of growth plots (time axis may be tricky but I think I know how)
 
-
-
+# Set Chunk Options
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+knitr::opts_chunk$set(fig.path='Figs/')
+```
 
 ```{r set project variables}
 #"..", takes up a level in the directory path
-Project <- "PICO"
-DataIn <- file.path("..","O2Data")
-PlotsPath <- file.path("..","Plots")
-DataOut <- file.path("..","ProcessData")
+Project <- "FluorO2"
+FileID <- "PSIICal"
+DataIn <- file.path("..","RawData", "Optode")
+DataOut <- file.path("..","ImportData", "Optode2")
 #MetaCatalog <- file.path("..","PicoCatalog.csv")
 
 FileEncode <- "UTF-8" 
 Delimiter <- "\t"
-#this is brittle; better to figure out how to read all data starting at line that contains 'key'
+
+#fixed HeaderRows is brittle; better to figure out how to read all data starting at line that contains 'key'
 HeaderRows <- 19
 Comment <- "#"
 
-```
-
-```{r, install packages}
-# install.packages('googlesheets4')
-# install.packages('googledrive')
-# install.packages('dplyr')
 ```
 
 ```{r load libraries} 
@@ -79,54 +79,54 @@ library(googledrive)
 
 This chunk reads in the MetaData catalog from googlesheets 
 ```{r load Catalog, now as a google sheet}
-gs4_deauth()
-#deauthorizes access to googlesheet
-
-MetaCatalog <- read_sheet("https://docs.google.com/spreadsheets/d/1ZXpwR7Gfto-uRzVdXzMpQF4frbrvMLH_IyLqonFZRSw/edit#gid=0") %>%
-# sheet is read in by sheet ID, obtained from the URL of the sheet.
-# read_sheet has an annoying "feature" to set the type of columns it can't parse to a list.
-# ggplot/dplyr doesn't like working with a dataframe of lists.
-# In this case WL is set to a list since some values are numbers, some are strings, some are blank.
-# To fix this, first drop all rows missing WL, then unlist.
-# Must first drop NA rows since unlist will collapse NULL lists, then the unlisted WL is a shorter length than original WL column, which mutate doesn't like.
-
-drop_na(WL) %>%
-  mutate(WL = unlist(WL))
-
-as.data.frame(MetaCatalog)
+# gs4_deauth()
+# #deauthorizes access to googlesheet
+# 
+# MetaCatalog <- read_sheet("https://docs.google.com/spreadsheets/d/1ZXpwR7Gfto-uRzVdXzMpQF4frbrvMLH_IyLqonFZRSw/edit#gid=0") %>%
+# # sheet is read in by sheet ID, obtained from the URL of the sheet.
+# # read_sheet has an annoying "feature" to set the type of columns it can't parse to a list.
+# # ggplot/dplyr doesn't like working with a dataframe of lists.
+# # In this case WL is set to a list since some values are numbers, some are strings, some are blank.
+# # To fix this, first drop all rows missing WL, then unlist.
+# # Must first drop NA rows since unlist will collapse NULL lists, then the unlisted WL is a shorter length than original WL column, which mutate doesn't like.
+# 
+# drop_na(WL) %>%
+#   mutate(WL = unlist(WL))
+# 
+# as.data.frame(MetaCatalog)
 ```
 
 Tidy the catalog, making dates as date values, tube as character, and wavelenth as a character
 ```{r}
-TidyCatalog <- MetaCatalog %>%
-  mutate(InnocDate = ymd(InnocDate),
-         ExpDate = ymd(ExpDate), 
-         Tube = as.character(Tube)) %>% 
-  select(-c(PrimaryOperator, Description, Motivation, doi, Source, SourceSalinity, Plate, Well))
-
-#Catalog <- MetaCatalog %>%
-  #mutate(InnocDate = ymd(InnocDate),
-         #ExpDate = ymd(ExpDate),
-         #Tube = as.character(Tube)) %>%
-  #select(-c(PrimaryOperator, Description, Motivation, doi))
-
-#check catalog for correct selections
-
-  TidyCatalog
+# TidyCatalog <- MetaCatalog %>%
+#   mutate(InnocDate = ymd(InnocDate),
+#          ExpDate = ymd(ExpDate), 
+#          Tube = as.character(Tube)) %>% 
+#   select(-c(PrimaryOperator, Description, Motivation, doi, Source, SourceSalinity, Plate, Well))
+# 
+# #Catalog <- MetaCatalog %>%
+#   #mutate(InnocDate = ymd(InnocDate),
+#          #ExpDate = ymd(ExpDate),
+#          #Tube = as.character(Tube)) %>%
+#   #select(-c(PrimaryOperator, Description, Motivation, doi))
+# 
+# #check catalog for correct selections
+# 
+#   TidyCatalog
 ```
 
 ```{r, subsetting catalog for run 14}
-TargetRun = 14
-RunCatalog <- select(filter(TidyCatalog, Run == TargetRun),c(Run:Optode))
-
-RunCatalog 
+# TargetRun = 14
+# RunCatalog <- select(filter(TidyCatalog, Run == TargetRun),c(Run:Optode))
+# 
+# RunCatalog 
 
 ```
 
 listing the names of the oxygen data, classified as DataIn. DataIn = O2Data 
 ```{r O2Data files}
 
-O2DataFiles <- list.files(path = DataIn, pattern = Project, full.names = TRUE)
+O2DataFiles <- list.files(path = DataIn, pattern = FileID, full.names = TRUE)
 
 #check file names
 O2DataFiles
@@ -136,11 +136,11 @@ Creates function using data.table::fread to skip the beginning comments and star
 ```{r creating two functions to read in data}
 
 #function adds filename and cdate and controls when R starts to read the file, skips header rows
-fread_plus <- function(Flnm, Skip){data.table::fread(file = Flnm, skip = "Date" ) %>% mutate(Filename = Flnm, CDateTime = ymd_hms(file.info(Flnm)$ctime))}
+fread_plus <- function(Flnm, Skip){data.table::fread(file = Flnm, skip = "Date [A Ch.1 Main]" ) %>% mutate(Filename = Flnm, CDateTime = ymd_hms(file.info(Flnm)$ctime))}
 
 
 #function allows you to read in oxygen data files (Reads in Run14 files)
-read_tsv_plus <- function(Flnm, HeaderRows){read_tsv(Flnm,  col_names = TRUE,  skip = HeaderRows) %>%
+read_tsv_plus <- function(Flnm, HeaderRows){read_tsv(Flnm,  col_names = TRUE,  comment = Comment) %>%
     mutate(filename = Flnm)}
 
 #generates a read function using tidyverse::read_delim
@@ -155,96 +155,49 @@ read_tsv_plus <- function(Flnm, HeaderRows){read_tsv(Flnm,  col_names = TRUE,  s
 
 
 Reads in O2Data, and skips the "notes" at the beginning of the data and begins to read after HeaderRows. Renames columns so there are no duplicates (.name_repair)
-```{r Test Reading in O2Data}
+```{r read optode data}
 
-O2DataTest <- O2DataFiles %>% 
-  map_df(~read_tsv_plus(Flnm = ., HeaderRows = 19))
+#brittle to use column numbers; needs to be changed if using multiple channels
+O2Data <- O2DataFiles %>% 
+  map_df(~read_tsv_plus(Flnm = ., HeaderRows = 19)) %>%
+  select(c(1:4, 12, "Time [Comment]","Comment","filename")) %>%
+  rename(Date = `Date [A Ch.1 Main]`, 
+         AbsTime = `Time [A Ch.1 Main]`,
+         LR_s = `dt (s) [A Ch.1 Main]`,
+         O2_umolL = `Oxygen (\xb5mol/L) [A Ch.1 Main]`, 
+         Temp_C = `Sample Temp. (\xb0C) [A Ch.1 CompT]`,
+         CommentTime = `Time [Comment]`) %>%
+  mutate(CommentTime = hms::new_hms(as.numeric(CommentTime) + (3600 * 12)))
 
-%>%
-  select(c(1:3, 5:9)) %>%
-  .name_repair = ~c(Ch1O2 = Ch1, 
-         Ch2O2 = Ch2, 
-         Ch3O2 = Ch3, 
-         Ch4O2 = Ch4,
-         Temp_C = 'Ch 1',
-         AbsoluteTime = 'Time (HH:MM:SS)',
-         Time = 'Time (s)')
-  select(-c(V5)) %>%
-  filter(!is.na(value))
+O2Data <- O2Data %>%
+  mutate(filename = str_remove(string = filename, pattern = ".txt")) %>%
+  mutate(filename = str_remove(string = filename, pattern = "../RawData/Optode/")) %>%  
+  separate(filename, into = c("FileDate","FileTime", "Project", "FileID", "CultureID", "Ex_WL"), sep = "([\\_\\_\\_\\_\\_])", remove = FALSE) %>%
+  mutate(FileTime = parse_date_time(as.character(FileTime), "hms")) %>%
+  separate(FileTime, into = c("FileYear", "FileTime"), sep = "([ ])", remove = TRUE) %>%
+  select(-c(FileYear))
 
-# O2DataTest <- O2DataFiles %>%
-#   map_df(~read_tsv_plus(flnm = ., HeaderRows)) #%>%
-#   select(c(Date, Time(HH:MM:SS), Time(s), Ch1, Ch2, Ch3, Ch4, Ch 1)) %>%
-#   rename(Ch1O2 = Ch1, 
-#          Ch2O2 = Ch2, 
-#          Ch3O2 = Ch3, 
-#          Ch4O2 = Ch4,
-#          Temp_C = 'Ch 1',
-#          AbsoluteTime = 'Time (HH:MM:SS)', 
-#          Time = 'Time (s)' )
-#   
-# O2DataTest <- O2DataFiles %>% 
-#     read_tsv(file = ., col_names = TRUE, skip =  HeaderRows) %>% 
-#     select(c(Date, Time(HH:MM:SS), Time(s), Ch1, Ch2, Ch3, Ch4, Ch 1)) %>%
-#           rename(Ch1O2 = Ch1,  
-#            Ch2O2 = Ch2,  
-#            Ch3O2 = Ch3,  
-#            Ch4O2 = Ch4, 
-#            Temp_C = 'Ch 1')
-  #map_df(~
-  
-#O2DataTest <- O2DataFiles %>% 
-  #map_df(~data.table::fread(file = ., skip = "Data")) #%>%
-  #select(-c(V5)) #%>%
-  #filter(!is.na(value))
-
-# O2Data <- O2DataFiles %>% 
-#    map_df(~read_tsv(file = ., col_names = TRUE, skip =  HeaderRows)) %>% 
-#   select(c(1:3, 5:10)) %>%
-#   rename(Ch1O2 = Ch1, 
-#          Ch2O2 = Ch2, 
-#          Ch3O2 = Ch3, 
-#          Ch4O2 = Ch4,
-#          Temp_C = 'Ch 1')
-
-#O2Data <- O2DataFiles %>%
-  #map_df(~read_tsv_plus(flnm = ., HeaderRows)) #%>%
-  #select(c(1:3, 5:9)) %>%
-  #rename(Ch1O2 = Ch1, 
-         #Ch2O2 = Ch2, 
-         #Ch3O2 = Ch3, 
-         #Ch4O2 = Ch4,
-         #Temp_C = 'Ch 1',
-         #AbsoluteTime = 'Time (HH:MM:SS)', 
-         #Time = 'Time (s)' ) 
- 
-#O2DataTest[1:10,]
-
-#O2DataTest[1:10]
-
-
-
+O2Data[1:5,]
 ```
 
-This chunk imports first Run 14 file 
-```{r read in data}
+```{r prelimplot}
+O2Data %>%
+  ggplot() +
+  geom_point(aes(x = LR_s, y = O2_umolL)) +
+  facet_grid(cols = vars(filename)) +
+  theme_bw()
+```
 
-#function allows you to read in oxygen data files
-read_tsv_plus <- function(Flnm, HeaderRows){read_tsv(Flnm,  col_names = TRUE,  skip = HeaderRows) %>%
-    mutate(Filename = Flnm)}
 
+```{r prelimplot2}
+O2DataTrim %>%
+  ggplot() +
+  geom_point(aes(x = etime_s, y = O2_umolL)) +
+  facet_grid(cols = vars(filename)) +
+  theme_bw()
+```
 
-#Think about names of time variables in MultiCulti import; we may use E_hour etc.
-Run14Data1 <- read_tsv_plus(Flnm = "../O2Data/20200627_PICO_MCMIX006_1234_RUN14.txt", HeaderRows = 19) %>%
-  select(c("Date":"Time (s)", "Ch1":"Ch 1", "Filename")) %>%
-  rename(Ch1O2 = Ch1, 
-         Ch2O2 = Ch2, 
-         Ch3O2 = Ch3, 
-         Ch4O2 = Ch4,
-         Temp_C = 'Ch 1',
-         AbsoluteTime = 'Time (HH:MM:SS)',
-         Time_s = 'Time (s)') %>%
-  mutate(E_hour = Time_s/3600)
+xxxxxx
 
 #Extract Run number from filename using REGEX, possibly with str_extract or grep
 Run14Data1 <- Run14Data1 %>%

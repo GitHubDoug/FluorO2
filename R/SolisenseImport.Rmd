@@ -214,6 +214,7 @@ SolFitsTrim %>%
 
 ```
 
+unique(SolFitsTrim$LR_s)
 
 ```{r estimate parameters}
 #think about nest_by and map?

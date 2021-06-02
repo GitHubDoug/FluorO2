@@ -1,5 +1,5 @@
 ---
-title: "Import and tidy data from the Solisense"
+title: "SolisenseImport"
 author:
 - Maximilian Berthold
 - Douglas A. Campbell
@@ -27,7 +27,7 @@ knitr::opts_chunk$set(fig.path='Figs/')
 # Set Project Variables
 ```{r set project variables}
 Project <- "FluorO2"
-DataOut <- file.path("..", "ProcessData")
+DataOut <- file.path("..", "ImportData")
 
 #Move catalog to Googlesheets?
 #We need to figure out the catalog issue
@@ -39,8 +39,8 @@ Catalog <- file.path("~/Dropbox/MURIS/MURIS_catalog.csv")
 # ColonyData
 
 #FileIDAb <- "Ab"
-FileIDSoli <- "_Soli_"
-FileReadSoli <- "Soli"
+#FileIDSoli <- "_Soli_"
+#FileReadSoli <- "Soli"
 #DataFolder <- "ProcessData"
 
 DataIn <- file.path("..", "RawData", "Solisense", fsep = .Platform$file.sep)
@@ -96,8 +96,8 @@ library(lubridate)
 ```
 
 ```{r set colours}
-Wavelengths_nm = c(445, 590)
-Colours_nm = c("dodgerblue", "darkorange")
+Wavelengths_nm = c(445, 470, 505, 535, 590)
+Colours_nm = c("darkblue", "dodgerblue", "darkgreen", "yellowgreen",  "darkorange")
 
 
 names(Colours_nm) <- Wavelengths_nm
@@ -126,7 +126,7 @@ read.delim_plus <- function(flnm, file_encode, delimiter, header_rows){read.deli
 Read Test File
 ```{r read example Solisense file}
 #issue with rows with --------;  easy to filter though
-TestFile <- read.delim_plus(flnm = "../RawData/Solisense/MURIS_202105121400_MaBe3414_445_caloxy_fit.csv", file_encode = FileEncode, delimiter = Delimiter, header_rows = HeaderRows)
+# TestFile <- read.delim_plus(flnm = "../RawData/Solisense/MURIS_202105121400_MaBe3414_445_caloxy_fit.csv", file_encode = FileEncode, delimiter = Delimiter, header_rows = HeaderRows)
 
 ```
 
@@ -137,16 +137,11 @@ SolFits <- SolisenseFiles %>%
 ```
 
 
-```{r save data}
-# saveRDS(SolFit, file.path(DataOut,
-# paste(Project, FileIDSoli <- "Soli", "SolisenseFiles.Rds", sep = "_"), fsep = .Platform$file.sep))
-```
-
-
 ```{r tidy SolFitsTrim}
 #Think of better ways to do this
 SolFitsTrim <- SolFits %>% 
   filter(!grepl("----", DATE)) %>% # remove rows with "----"
+  select(-c("Lon", "Lat", "GPS_stat")) %>% # remove superfluous columns
   mutate(filename = str_remove(string = filename, pattern = ".csv")) %>%
   mutate(filename = str_remove(string = filename, pattern = "../RawData/")) %>%
   separate(filename, into = c("Device", "Project", "DateTime", "CultureID", "Ex_WL", "Exp_Type"), sep = "([\\/\\_\\_\\_\\_])", remove = FALSE) %>%
@@ -174,26 +169,54 @@ SolFitsTrim <- SolFitsTrim %>%
 
 SolFitsTrim[1,]
 
-#drop superfluous empty columns
+#XXXX Working on separating 1 s dark rows from other rows; perhaps filter all rows where time increment < 2 s?
+
+#generate column with duration of light step in s
+
+#add a column adding Dark1s based upon any step < 5 s
+#replace NA for first dark with nominal 181;  issue will be changing durations of light steps across each run
 SolFitsTrim <- SolFitsTrim %>%
-  select(-c("Lon", "Lat", "GPS_stat"))
+  group_by(Source.DataFile, CultureID, Ex_WL) %>%
+  #mutate(Step_s = as.numeric(ObsDateTime - lag(ObsDateTime)), .after = ObsDateTime) %>%
+  mutate(Step_s = replace_na(as.numeric(ObsDateTime - lag(ObsDateTime)), 181), .after = ObsDateTime) %>%
+  mutate(LR_s = as.numeric(ObsDateTime - ObsDateTime[1]), .after = Step_s) %>%
+  mutate(Dark1s = if_else(Step_s > 5, 0, 1), .after = Step_s) %>%
+  relocate(Ex_WL, .after = Dark1s) %>%
+  relocate(ActPAR, .after = Ex_WL)
+
+
+#Figure out how to cope with final step at 0 PAR, not followed by Dark1s step
+#separate Dark1s rows
+
+
+#Figure out how to re-match Dark1s to appropriate light steps
+
 ```
 
 
 
 ```{r prelimplots}
 SolFitsTrim %>%
+  filter(Dark1s == 0) %>%
   ggplot() +
-  geom_point(aes(x = ActPAR, y = FvFm, colour = Ex_WL)) +
+  geom_point(aes(x = ActPAR, y = FvFm, colour = Ex_WL, size = LR_s)) +
   scale_colour_manual(values = Colours_nm) +
   facet_grid(cols = vars(Ex_WL), rows = vars(CultureID)) +
   theme_bw()
-  
-#  
+
+SolFitsTrim %>%
+  #filter(Dark1s != 0) %>%
+  ggplot() +
+  geom_point(aes(x = LR_s, y = FvFm, colour = Ex_WL, size = ActPAR)) +
+  scale_colour_manual(values = Colours_nm) +
+  facet_grid(cols = vars(Ex_WL), rows = vars(CultureID)) +
+  theme_bw()
+
 ```
 
 
 ```{r estimate parameters}
+#think about nest_by and map?
 SolFitsTrim <- SolFitsTrim %>%
   group_by(CultureID, Ex_WL, Source.DataFile) %>%
   mutate(Fodark = Fo[1],
@@ -206,8 +229,9 @@ SolFitsTrim <- SolFitsTrim %>%
          ActPAR_photonsm2s = ActPAR *  6.022e17,
          Ctau1 = 1/(1 + (Sig_m2psii * ActPAR_photonsm2s * (Tau1QA/1000000))),
          Ctau2 = 1/(1 + (Sig_m2psii * ActPAR_photonsm2s * (Tau2QA/1000000))),
-         qp = (Fm - Fo)/(Fm -Fomin),
-         JVPSII_aLHIIminmax = ActPAR_photonsm2s * aLHIIminmax * FvFm)
+         qp = (Fm - Fo)/(Fm - Fomin), #improve this with Fo1s
+         JVPSII_aLHIIminmax = ActPAR_photonsm2s * aLHIIminmax * FvFm) %>%
+  ungroup()
 
 
   #mutate(aLHII <- 
@@ -215,6 +239,7 @@ SolFitsTrim <- SolFitsTrim %>%
 
 ```{r prelimplots2}
 SolFitsTrim %>%
+  filter(Dark1s == 0) %>%
   ggplot() +
   geom_point(aes(x = ActPAR, y = aLHIIdark, colour = Ex_WL)) +
   geom_point(aes(x = ActPAR, y = aLHIIminmax), shape = "cross") +
@@ -223,26 +248,29 @@ SolFitsTrim %>%
   theme_bw()
 
 SolFitsTrim %>%
+  filter(Dark1s == 0) %>%
   ggplot() +
   geom_point(aes(x = Ctau1, y = qp, colour = Ex_WL)) +
   #geom_point(aes(x = ActPAR, y = aLHIIminmax), shape = "cross") +
   scale_colour_manual(values = Colours_nm) +
   facet_grid(cols = vars(Ex_WL), rows = vars(CultureID)) +
-  geom_abline(yintercept = 0, slope = 1, linetype = "dashed") + 
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") + 
   coord_fixed(ratio = 1) +
   theme_bw()
 
 SolFitsTrim %>%
+  filter(Dark1s == 0) %>%
   ggplot() +
   geom_point(aes(x = Ctau2, y = qp, colour = Ex_WL)) +
   #geom_point(aes(x = ActPAR, y = aLHIIminmax), shape = "cross") +
   scale_colour_manual(values = Colours_nm) +
   facet_grid(cols = vars(Ex_WL), rows = vars(CultureID)) +
-  geom_abline(yintercept = 0, slope = 1, linetype = "dashed") + 
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") + 
   coord_fixed(ratio = 1) +
   theme_bw()
 
 SolFitsTrim %>%
+  filter(Dark1s == 0) %>%
   ggplot() +
   geom_point(aes(x = ActPAR, y = JVPSII_aLHIIminmax, colour = Ex_WL)) +
   #geom_point(aes(x = ActPAR, y = aLHIIminmax), shape = "cross") +
@@ -250,8 +278,11 @@ SolFitsTrim %>%
   facet_grid(cols = vars(Ex_WL), rows = vars(CultureID)) +
   theme_bw()
 
-  
-#  
+```
+
+
+```{r save SolFitsTrim data}
+saveRDS(SolFitsTrim, file.path(DataOut, paste(Project, "SolFitsTrim.Rds", sep = "_"), fsep = .Platform$file.sep))
 ```
 
 XXXXXX

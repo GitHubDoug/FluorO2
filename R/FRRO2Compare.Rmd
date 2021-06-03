@@ -36,6 +36,7 @@ knitr::opts_chunk$set(fig.path='Figs/')
 Project <- "FluorO2"
 DataInO2 <- file.path("..","ImportData", "Optode")
 DataInFRRf <- file.path("..","ImportData", "FRRf")
+DataOut <- file.path("..", "FitData")
 #MetaCatalog <- file.path("..","PicoCatalog.csv")
 
 ```
@@ -208,27 +209,54 @@ Be careful with nesting!  Multiple steps at single ActPARinter
 ```{r O2slopes}
 O2FRRfNest <- O2FRRfData %>%
   filter(Dark1sinter == 0) %>%
-  nest(data = -c(Date, CultureID, Ex_WL, LR_sFRRfinter, ActPARinter)) %>%
+  nest(data = -c(Date, CultureID, Ex_WL, LR_sFRRfinter, ActPARinter, JVPSIIinter)) %>%
   mutate(O2lm = map(data,  possibly(~ lm(O2_umolL ~ as.numeric(AbsTime), data = .x), otherwise = NULL)),
-         O2lm_tidy = map(O2lm, possibly(tidy, otherwise = NULL)))
-  
+         O2lm_tidy = map(O2lm, possibly(tidy, otherwise = NULL))) %>%
+  select(-c(data, O2lm)) %>%
+  unnest(cols = O2lm_tidy) %>%
+  filter(term  != "(Intercept)") %>%
+  select(-term) %>%
+  rename(O2_umolmls = estimate) %>%
+  group_by(Date, CultureID, Ex_WL) %>% #careful with group_by; this only works with a single replication of each LR
+  mutate(O2evln_O2ls = (O2_umolmls - (mean(O2_umolmls[1],O2_umolmls[5])))*6.022e17) %>%
+  ungroup()
+
 ```
 
 ```{r O2slopeplots}
 O2FRRfNest %>%
-  unnest(cols = O2lm_tidy)%>%
-  filter(term  != "(Intercept)") %>%
   ggplot() +
-  geom_line(aes(x = LR_sFRRfinter, y = estimate)) +
+  geom_line(aes(x = LR_sFRRfinter, y = O2_umolmls, colour = Ex_WL)) +
+    scale_colour_manual(values = Colours_nm) +
     facet_grid(cols = vars(CultureID), rows = vars(Ex_WL)) +
     theme_bw()
 
 O2FRRfNest %>%
-  unnest(cols = O2lm_tidy)%>%
-  filter(term  != "(Intercept)") %>%
   ggplot() +
-  geom_line(aes(x = ActPARinter, y = estimate)) +
+  geom_line(aes(x = ActPARinter, y = O2_umolmls, colour = Ex_WL)) +
+    scale_colour_manual(values = Colours_nm) +
     facet_grid(cols = vars(CultureID), rows = vars(Ex_WL)) +
+    theme_bw()
+
+O2FRRfNest %>%
+  ggplot() +
+  geom_line(aes(y = JVPSIIinter, x = O2evln_O2ls, colour = Ex_WL)) +
+    scale_colour_manual(values = Colours_nm) +
+    facet_grid(cols = vars(CultureID), rows = vars(Ex_WL)) +
+    theme_bw()
+
+O2FRRfNest %>%
+  ggplot() +
+  geom_point(aes(y = JVPSIIinter, x = O2evln_O2ls, colour = Ex_WL)) +
+    scale_colour_manual(values = Colours_nm) +
+    #facet_grid(cols = vars(CultureID), rows = vars(Ex_WL)) +
+    theme_bw()
+
+O2FRRfNest %>%
+  ggplot() +
+  geom_point(aes(x = JVPSIIinter, y = O2evln_O2ls, colour = Ex_WL)) +
+    scale_colour_manual(values = Colours_nm) +
+    #facet_grid(cols = vars(CultureID), rows = vars(Ex_WL)) +
     theme_bw()
 ```
 

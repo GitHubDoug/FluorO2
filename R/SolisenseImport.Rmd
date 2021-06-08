@@ -17,6 +17,8 @@ csl: plos-one.csl
 
 *Some of the code used to create this R Notebook was refurbished from "PlateAbImport.Rmd" written by Maximilian Berthold, Douglas A. Campbell, Melissa L. Rioux, Sarah J Gore, and Alyson MacCormack.*
 
+# To Do
+Add more ETR estimators
 
 # Set Chunk Options
 ```{r setup, include = FALSE}

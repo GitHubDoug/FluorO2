@@ -120,6 +120,15 @@ FRRfData %>%
   scale_colour_manual(values = Colours_nm) +
   facet_grid(rows = vars(Ex_WL), cols = vars(CultureID)) +
   theme_bw()
+
+FRRfData %>%
+  filter(Dark1s == 0) %>%
+  ggplot() +
+  geom_point(aes(x = LR_s, y = JVPSII_ETRqpOxbo)) +
+  #geom_point(aes(x = O2Data$LR_s, y = O2Data$O2_umolL, colour = Ex_WL)) +
+  scale_colour_manual(values = Colours_nm) +
+  facet_grid(rows = vars(Ex_WL), cols = vars(CultureID)) +
+  theme_bw()
 ```
 
 #Try Simple left_join, in case times line up
@@ -237,6 +246,16 @@ O2FRRfMeta %>%
   geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax, colour = Ex_WL)) +
   scale_colour_manual(values = Colours_nm) +
   geom_smooth(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax, colour = Ex_WL), method = "lm") +
+  #facet_grid(cols = vars(strain)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  theme_bw()
+
+O2FRRfMeta %>%
+  ggplot() +
+  geom_point(aes(x = O2evln_O2ls, y = JVPSII_ETRqpOxbo, colour = Ex_WL)) +
+  scale_colour_manual(values = Colours_nm) +
+  geom_smooth(aes(x = O2evln_O2ls, y = JVPSII_ETRqpOxbo, colour = Ex_WL), method = "lm") +
   #facet_grid(cols = vars(strain)) +
   geom_vline(xintercept = 0, linetype = "dashed") +
   geom_hline(yintercept = 0, linetype = "dashed") +

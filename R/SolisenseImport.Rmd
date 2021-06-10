@@ -31,11 +31,14 @@ knitr::opts_chunk$set(fig.path='Figs/')
 Project <- "FluorO2"
 DataOut <- file.path("..", "ImportData", "FRRf")
 
+#Temporary RunDate during auditing
+RunDate <- "20210609"
+
 #Move catalog to Googlesheets?
 #We need to figure out the catalog issue
 CatalogPath <- file.path("~/Dropbox/MURIS/MURIS_catalog.csv")
 
-DataIn <- file.path("..", "RawData", "Solisense", fsep = .Platform$file.sep)
+DataIn <- file.path("..", "RawData", "Solisense", "20210609", fsep = .Platform$file.sep)
 
 FileID <- "fit"
 
@@ -128,14 +131,15 @@ SolFits <- SolisenseFiles %>%
 
 ```{r tidy SolFitsTrim}
 #Think of better ways to do this
+#Careful about RunDate, which is the label of a RunDate sub-folder.
 SolFitsTrim <- SolFits %>% 
   filter(!grepl("----", DATE)) %>% # remove rows with "----"
-  select(-c("Lon", "Lat", "GPS_stat")) %>% # remove superfluous columns
+  select(-c("Lon", "Lat", "GPS_stat", "X")) %>% # remove superfluous columns
   mutate(filename = str_remove(string = filename, pattern = ".csv")) %>%
   mutate(filename = str_remove(string = filename, pattern = "../RawData/")) %>%
-  separate(filename, into = c("Device", "Project", "DateTime", "CultureID", "Ex_WL", "Exp_Type"), sep = "([\\/\\_\\_\\_\\_])", remove = FALSE) %>%
+  separate(filename, into = c("Device", "RunDate", "Project", "DateTime", "CultureID", "Ex_WL", "Exp_Type"), sep = "([\\/\\/\\_\\_\\_\\_])", remove = FALSE) %>%
   mutate(DATE = ymd(DATE),
-          TIME = as.character(TIME)) %>% #time-column is read in as factor, and as.character changes it to numeric; using lubdridate::hms would only change the format to 13H 4M 2S but does not work later one to merge into one DateTime-column
+          TIME = as.character(TIME)) %>% #time-column may be read in as factor, and as.character changes it to numeric; using lubdridate::hms would only change the format to 13H 4M 2S but does not work later one to merge into one DateTime-column
   rename(ObsDate = DATE,
          ObsTime = TIME,
          FvFm = "Fv.Fm") %>%
@@ -144,7 +148,7 @@ SolFitsTrim <- SolFits %>%
   mutate(FvFm = as.numeric(as.character(FvFm)),
          nm445 = as.numeric(as.character(Light_1)),
          nm590 = as.numeric(as.character(Light_5))) %>%
-  mutate(datetime = ymd_hm(DateTime)) %>%
+  mutate(DateTime = ymd_hm(DateTime)) %>%
   rename(StartDateTimeSol = DateTime) %>%
   drop_na(StartDateTimeSol) %>%
   mutate(ObsTime = hms(ObsTime)) %>%
@@ -164,13 +168,11 @@ SolFitsTrim[1,]
 SolFitsTrim <- SolFitsTrim %>%
   group_by(Source.DataFile, CultureID, Ex_WL) %>%
   #mutate(Step_s = as.numeric(ObsDateTime - lag(ObsDateTime)), .after = ObsDateTime) %>%
-  mutate(Step_s = replace_na(as.numeric(ObsDateTime - lag(ObsDateTime)), 181), .after = ObsDateTime) %>%
+  mutate(Step_s = replace_na(as.numeric(ObsDateTime - lag(ObsDateTime)), 181), .after = ObsDateTime) %>% 
   mutate(LR_s = as.numeric(ObsDateTime - ObsDateTime[1]), .after = Step_s) %>%
   mutate(Dark1s = if_else(Step_s > 5, 0, 1), .after = Step_s) %>%
   relocate(Ex_WL, .after = Dark1s) %>%
   relocate(ActPAR, .after = Ex_WL)
-
-
 #Figure out how to cope with final step at 0 PAR, not followed by Dark1s step
 #separate Dark1s rows
 #Figure out how to re-match Dark1s to appropriate light steps
@@ -333,7 +335,7 @@ SolFitsTrim %>%
 
 
 ```{r save SolFitsTrim data}
-saveRDS(SolFitsTrim, file.path(DataOut, paste(Project, "SolFitsTrim.Rds", sep = "_"), fsep = .Platform$file.sep))
+saveRDS(SolFitsTrim, file.path(DataOut, paste(Project, RunDate, "SolFitsTrim.Rds", sep = "_"), fsep = .Platform$file.sep))
 ```
 
 

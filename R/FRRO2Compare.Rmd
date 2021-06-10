@@ -31,6 +31,8 @@ knitr::opts_chunk$set(fig.path='Figs/')
 ```{r set project variables}
 #"..", takes up a level in the directory path
 Project <- "FluorO2"
+#Temporary RunDate during auditing
+RunDate <- "20210609"
 DataInO2 <- file.path("..","ImportData", "Optode")
 DataInFRRf <- file.path("..","ImportData", "FRRf")
 DataOut <- file.path("..", "FitData")
@@ -87,8 +89,9 @@ This chunk reads in a MetaData catalog from googlesheets
 Read in O2Data and FRRfData
 Make this more general as we accumulate more files.
 ```{r read data}
-O2Data <- readRDS(file = file.path(DataInO2, "FluorO2_O2Data.Rds"))
-FRRfData <- readRDS(file = file.path(DataInFRRf, "FluorO2_SolFitsTrim.Rds"))
+#temporary hack to cope with run date; replace with GREP? or map?
+O2Data <- readRDS(file = file.path(DataInO2, "FluorO2_20210609_O2Data.Rds"))
+FRRfData <- readRDS(file = file.path(DataInFRRf, "FluorO2_20210609_SolFitsTrim.Rds"))
 
 ```
 
@@ -186,21 +189,6 @@ O2Slopes <- O2SlopeData %>%
   mutate(O2evln_O2ls = (O2_umolLs - O2_umolLs[5]) * 6.022e17) %>%
   ungroup()
 
-O2Slopes2 <- O2SlopeData %>%
-  filter(Dark1sinter == 0) %>%
-  nest(O2data = -c(Date, CultureID, Ex_WL, filenameO2, ActPARinter, LR_sFRRfinter)) %>% 
-  mutate(O2data2 = map(O2data, ~slice_tail(., n = 145)), #keep last 145 rows of nested data
-    O2lm = map(O2data2,  possibly(~ lm(O2_umolL ~ as.numeric(AbsTime), data = .x), otherwise = NULL)),
-         O2lm_tidy = map(O2lm, possibly(tidy, otherwise = NULL))) %>%
-  select(-c(O2data, O2data2, O2lm)) %>%
-  unnest(cols = O2lm_tidy) %>%
-  filter(term  != "(Intercept)") %>%
-  select(-term) %>%
-  rename(O2_umolLs = estimate) %>%
-  group_by(Date, filenameO2, CultureID, Ex_WL) %>% #careful with group_by; this only works with a single replication of each LR
-  mutate(O2evln_O2ls = (O2_umolLs - O2_umolLs[5]) * 6.022e17) %>%
-  ungroup()
-
 #Decide how to handle subtraction of dark O2 slopes to estimate gross O2 evln
 #mutate(O2evln_O2ls_ALT = (O2_umolLs - mean(O2_umolLs[1], O2_umolLs[5]))) %>%
  #- (mean(O2_umolLs[1],O2_umolLs[5])))*6.022e17
@@ -227,7 +215,6 @@ Merge O2Slopes Data with FRRf Data and Catalog
 
 ```{r}
 O2FRRfMeta <- left_join(x = FRRfData, y = O2Slopes, by = c(c("ObsDate" = "Date"),  "CultureID", "Ex_WL", "ActPAR" = "ActPARinter"), suffix = c("FRRf", "O2"), keep = FALSE) %>%
-  select(-c("X")) %>%
   left_join(x = ., y = MetaData, by = c("CultureID" = "id"))
 ```
 
@@ -293,7 +280,7 @@ O2FRRfMetaNest %>%
 
 
 ```{r save O2FRRfMeta}
-saveRDS(O2FRRfMeta, file.path(DataOut, paste(Project, "O2FRRfMeta.Rds", sep = "_"), fsep = .Platform$file.sep))
+saveRDS(O2FRRfMeta, file.path(DataOut, paste(Project, RunDate, "O2FRRfMeta.Rds", sep = "_"), fsep = .Platform$file.sep))
 ```
 
 

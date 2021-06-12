@@ -32,13 +32,13 @@ Project <- "FluorO2"
 DataOut <- file.path("..", "ImportData", "FRRf")
 
 #Temporary RunDate during auditing
-RunDate <- "20210609"
+RunDate <- "20210611"
 
 #Move catalog to Googlesheets?
 #We need to figure out the catalog issue
 CatalogPath <- file.path("~/Dropbox/MURIS/MURIS_catalog.csv")
 
-DataIn <- file.path("..", "RawData", "Solisense", "20210609", fsep = .Platform$file.sep)
+DataIn <- file.path("..", "RawData", "Solisense", RunDate, fsep = .Platform$file.sep)
 
 FileID <- "fit"
 

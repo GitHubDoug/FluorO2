@@ -50,7 +50,7 @@ knitr::opts_chunk$set(fig.path='Figs/')
 Project <- "FluorO2"
 
 #Temporary RunDate during auditing
-RunDate <- "20210609"
+RunDate <- "20210611"
 
 
 FileID <- "caloxy"
@@ -117,10 +117,15 @@ O2DataFiles <- list.files(path = DataIn, pattern = FileID, full.names = TRUE)
 
 #check file names
 O2DataFiles
+
+O2DataFiles<-  grep('txt', O2DataFiles, value = TRUE, invert = FALSE)
+
+#only retain .txt files
+O2DataFiles
 ```
 
 Creates function using data.table::fread to skip the beginning comments and starts reading file after key word "Data". Seconf function read_tsv_plus adding file name and skips header rows to start reading file after. Data read.delim_plus or read_delim_plus adds filename and cdate, message=FALSE, warning=FALSE
-```{r creating two functions to read in data}
+```{r creating functions to read in data}
 
 #function adds filename and cdate and controls when R starts to read the file, skips header rows
 #fread_plus <- function(Flnm, Skip){data.table::fread(file = Flnm, skip = "Date [A Ch.1 Main]" ) %>% mutate(Filename = Flnm, CDateTime = ymd_hms(file.info(Flnm)$ctime))}

@@ -90,8 +90,8 @@ Read in O2Data and FRRfData
 Make this more general as we accumulate more files.
 ```{r read data}
 #temporary hack to cope with run date; replace with GREP? or map?
-O2Data <- readRDS(file = file.path(DataInO2, "FluorO2_20210609_O2Data.Rds"))
-FRRfData <- readRDS(file = file.path(DataInFRRf, "FluorO2_20210609_SolFitsTrim.Rds"))
+O2Data <- readRDS(file = file.path(DataInO2, paste("FluorO2_",RunDate, "_O2Data.Rds", sep = "")))
+FRRfData <- readRDS(file = file.path(DataInFRRf, paste("FluorO2_", RunDate, "_SolFitsTrim.Rds", sep = "")))
 
 ```
 

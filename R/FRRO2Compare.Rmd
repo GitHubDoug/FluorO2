@@ -32,7 +32,7 @@ knitr::opts_chunk$set(fig.path='Figs/')
 #"..", takes up a level in the directory path
 Project <- "FluorO2"
 #Temporary RunDate during auditing
-RunDate <- "20210609"
+RunDate <- "20210611"
 DataInO2 <- file.path("..","ImportData", "Optode")
 DataInFRRf <- file.path("..","ImportData", "FRRf")
 DataOut <- file.path("..", "FitData")
@@ -132,6 +132,24 @@ FRRfData %>%
   scale_colour_manual(values = Colours_nm) +
   facet_grid(rows = vars(Ex_WL), cols = vars(CultureID)) +
   theme_bw()
+
+FRRfData %>%
+  filter(Dark1s == 0) %>%
+  ggplot() +
+  geom_point(aes(x = LR_s, y = ETRqpOxbo)) +
+  #geom_point(aes(x = O2Data$LR_s, y = O2Data$O2_umolL, colour = Ex_WL)) +
+  scale_colour_manual(values = Colours_nm) +
+  facet_grid(rows = vars(Ex_WL), cols = vars(CultureID)) +
+  theme_bw()
+
+FRRfData %>%
+  filter(Dark1s == 0) %>%
+  ggplot() +
+  geom_point(aes(x = LR_s, y = (ETRqpOxbo * Fomin/Sig_m2psii))) +
+  #geom_point(aes(x = O2Data$LR_s, y = O2Data$O2_umolL, colour = Ex_WL)) +
+  scale_colour_manual(values = Colours_nm) +
+  facet_grid(rows = vars(Ex_WL), cols = vars(CultureID)) +
+  theme_bw()
 ```
 
 #Try Simple left_join, in case times line up
@@ -144,8 +162,10 @@ O2SlopeData <- left_join(x = O2Data, y = FRRfData, by = c(c("Date" = "ObsDate"),
 
 ```{r O2FRRfprelimplot}
 O2SlopeData %>%
+  #filter(Dark1s == 0) %>%
   ggplot() +
   geom_point(aes(x = LR_sO2, y = O2_umolL, colour = Ex_WL)) +
+  geom_point(aes(x = LR_sO2, y = ActPAR), colour = "black") +
   scale_colour_manual(values = Colours_nm) +
   facet_grid(rows = vars(Ex_WL), cols = vars(CultureID)) +
   theme_bw()
@@ -167,18 +187,65 @@ O2SlopeData <- O2SlopeData %>%
          
          #ActPAR_photonsm2sinter = interpolate(ActPAR_photonsm2s),
          #JVPSIIinter = interpolate(JVPSII_aLHIIminmax)
-         
+
+test <- O2SlopeData %>%
+  filter(CultureID == "MaBe3433",
+         #LR_sO2 < 450,
+        Ex_WL == "590")
+
+test %>%
+   #filter(Dark1sinter == 0) %>%
+   ggplot() +
+  geom_point(aes(x = LR_sO2, y = O2_umolL, colour = Ex_WL)) +
+ geom_point(aes(x = LR_sO2, y = ActPARinter, colour = "black")) +
+    geom_point(aes(x = LR_sO2, y = Dark1sinter), colour = "red") +
+  scale_colour_manual(values = Colours_nm) +
+  facet_grid(rows = vars(Ex_WL), cols = vars(CultureID)) +
+  theme_bw()
+```
+
+Check whether ActPARinter worked properly
+Need to check whether Dark1sinter worked properly
+Need to filter for Dark1sinter == 0 before slope estimations or plotting vs. ActPARinter
+```{r O2FRRfprelimplot2}
+O2SlopeData %>%
+  #filter(Dark1sinter == 0) %>%
+  ggplot() +
+  geom_point(aes(x = LR_sO2, y = O2_umolL, colour = Ex_WL)) +
+  geom_point(aes(x = LR_sO2, y = ActPARinter), colour = "black") +
+  scale_colour_manual(values = Colours_nm) +
+  facet_grid(rows = vars(Ex_WL), cols = vars(CultureID)) +
+  theme_bw()
+
+#filter CultureID with negative O2slope throughout and with aberrant ActPARinter
+#recheck with Max about FRRf file processing to recuperate ActPARinter
+O2SlopeData %>%
+  #filter(Dark1sinter == 0) %>%
+  filter(CultureID != "MaBe3432") %>%
+  #filter(CultureID != "MaBe3431") %>%
+  #filter(CultureID != "MaBe3433" | Ex_WL != "590") %>%
+  ggplot() +
+  geom_point(aes(x = LR_sO2, y = O2_umolL, colour = Ex_WL)) +
+  geom_point(aes(x = LR_sO2, y = ActPARinter), colour = "black") +
+  scale_colour_manual(values = Colours_nm) +
+  facet_grid(rows = vars(Ex_WL), cols = vars(CultureID)) +
+  theme_bw()
+
 ```
 
 Estimate O2 slopes over LR PAR step ranges
 Be careful with nesting!  Multiple steps at single ActPARinter
 Filter out first 30 s of each ActPARinter set to skip 'induction' phase.
 ```{r O2slopes}
+induction_s = 35
+end_s = 175
 O2Slopes <- O2SlopeData %>%
   filter(Dark1sinter == 0) %>%
+  filter(CultureID != "MaBe3431") %>%
+  #filter(CultureID != "MaBe3433" | Ex_WL != "590") %>%
   nest(O2data = -c(Date, CultureID, Ex_WL, filenameO2, ActPARinter, LR_sFRRfinter)) %>% 
   #nest(O2data = c(Date, AbsTime, LR_sO2, O2_umolL, Temp_C, ActPARinter, filenameO2)) %>%
-  mutate(O2lm = map(O2data,  possibly(~ lm(O2_umolL ~ as.numeric(AbsTime), data = .x), otherwise = NULL)),
+  mutate(O2lm = map(O2data,  possibly(~ lm(O2_umolL[induction_s:end_s] ~ as.numeric(AbsTime[induction_s:end_s]), data = .x), otherwise = NULL)),
          O2lm_tidy = map(O2lm, possibly(tidy, otherwise = NULL))) %>%
   select(-c(O2data, O2lm)) %>%
   unnest(cols = O2lm_tidy) %>%
@@ -186,7 +253,7 @@ O2Slopes <- O2SlopeData %>%
   select(-term) %>%
   rename(O2_umolLs = estimate) %>%
   group_by(Date, filenameO2, CultureID, Ex_WL) %>% #careful with group_by; this only works with a single replication of each LR
-  mutate(O2evln_O2ls = (O2_umolLs - O2_umolLs[5]) * 6.022e17) %>%
+  mutate(O2evln_O2ls = (O2_umolLs - min(O2_umolLs)) * 6.022e17) %>%
   ungroup()
 
 #Decide how to handle subtraction of dark O2 slopes to estimate gross O2 evln
@@ -222,6 +289,8 @@ O2FRRfMeta <- left_join(x = FRRfData, y = O2Slopes, by = c(c("ObsDate" = "Date")
 Cross plots of O2 evolution and FRRf electron transport
 ```{r O2FRRfcrossplots}
 O2FRRfMeta %>%
+  filter(O2evln_O2ls > 0) %>%
+  filter(JVPSII_aLHIIminmax > 0) %>%
   ggplot() +
   geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax, colour = Ex_WL)) +
   scale_colour_manual(values = Colours_nm) +
@@ -229,6 +298,8 @@ O2FRRfMeta %>%
   theme_bw()
 
 O2FRRfMeta %>%
+  filter(O2evln_O2ls > 0) %>%
+  filter(JVPSII_aLHIIminmax > 0) %>%
   ggplot() +
   geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax, colour = Ex_WL)) +
   scale_colour_manual(values = Colours_nm) +
@@ -239,6 +310,8 @@ O2FRRfMeta %>%
   theme_bw()
 
 O2FRRfMeta %>%
+  filter(O2evln_O2ls > 0) %>%
+  filter(JVPSII_ETRqpOxbo > 0) %>%
   ggplot() +
   geom_point(aes(x = O2evln_O2ls, y = JVPSII_ETRqpOxbo, colour = Ex_WL)) +
   scale_colour_manual(values = Colours_nm) +
@@ -252,12 +325,18 @@ O2FRRfMeta %>%
 Fit regressions of FRRf estimators vs. O2evln
 ```{r FRRFO2regressions}
 O2FRRfMetaNest <-  O2FRRfMeta %>%
+  filter(O2evln_O2ls > 0) %>%
+  filter(JVPSII_aLHIIminmax > 0) %>%
   nest(data = -c(Ex_WL)) %>%
   mutate(
   JVPSII_aLHIIminmax_O2 = map(data, possibly(~lm(JVPSII_aLHIIminmax ~ O2evln_O2ls, data = .x), otherwise = NULL)),
   JVPSII_O2_predict = map(JVPSII_aLHIIminmax_O2, possibly(augment, otherwise = NULL)),
   JVPSII_O2_tidied =  map(JVPSII_aLHIIminmax_O2, possibly(tidy, otherwise = NULL)),
   JVPSII_O2_param = map(JVPSII_aLHIIminmax_O2, possibly(glance, otherwise = NULL)),
+  JVPSII_ETRqpOxbo_O2 = map(data, possibly(~lm(JVPSII_ETRqpOxbo ~ O2evln_O2ls, data = .x), otherwise = NULL)),
+  JVPSII_ETRqpOxbo_O2_predict = map(JVPSII_ETRqpOxbo_O2, possibly(augment, otherwise = NULL)),
+  JVPSII_ETRqpOxbo_O2_tidied =  map(JVPSII_ETRqpOxbo_O2, possibly(tidy, otherwise = NULL)),
+  JVPSII_ETRqpOxbo_O2_param = map(JVPSII_ETRqpOxbo_O2, possibly(glance, otherwise = NULL))
   )
 
 
@@ -266,15 +345,31 @@ O2FRRfMetaNest %>%
   unnest(JVPSII_O2_predict) %>%
   ggplot() +
   geom_line(aes(x = O2evln_O2ls, y = .fitted), colour = "black", linetype = "dashed") +
-  geom_line(aes(x = O2evln_O2ls, y = .fitted + .se.fit), colour = "grey", linetype = "dashed") +
-    geom_line(aes(x = O2evln_O2ls, y = .fitted - .se.fit), colour = "grey", linetype = "dashed") +
-  geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax), colour = "darkgreen") +
-  geom_point(aes(x = O2evln_O2ls, y = .resid), colour = "darkred") +
+ # geom_line(aes(x = O2evln_O2ls, y = .fitted + .se.fit), colour = "grey", linetype = "dashed") +
+ #   geom_line(aes(x = O2evln_O2ls, y = .fitted - .se.fit), colour = "grey", linetype = "dashed") +
+  geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax),colour = "darkgreen") +
+  geom_point(aes(x = O2evln_O2ls, y = .resid), colour = "darkred", size = 0.1) +
+  geom_hline(yintercept = 0,linetype = "dashed") +
   facet_grid(cols = vars(Ex_WL)) +
   theme_bw()
 
 O2FRRfMetaNest %>%
   unnest(JVPSII_O2_tidied)
+
+O2FRRfMetaNest %>%
+  unnest(JVPSII_ETRqpOxbo_O2_predict) %>%
+  ggplot() +
+  geom_line(aes(x = O2evln_O2ls, y = .fitted), colour = "black", linetype = "dashed") +
+ # geom_line(aes(x = O2evln_O2ls, y = .fitted + .se.fit), colour = "grey", linetype = "dashed") +
+ #   geom_line(aes(x = O2evln_O2ls, y = .fitted - .se.fit), colour = "grey", linetype = "dashed") +
+  geom_point(aes(x = O2evln_O2ls, y = JVPSII_ETRqpOxbo),colour = "darkgreen") +
+  geom_point(aes(x = O2evln_O2ls, y = .resid), colour = "darkred", size = 0.1) +
+  geom_hline(yintercept = 0,linetype = "dashed") +
+  facet_grid(cols = vars(Ex_WL)) +
+  theme_bw()
+
+O2FRRfMetaNest %>%
+  unnest(JVPSII_ETRqpOxbo_O2_tidied)
 
 ```
 

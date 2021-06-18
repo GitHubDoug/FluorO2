@@ -32,7 +32,7 @@ knitr::opts_chunk$set(fig.path='Figs/')
 #"..", takes up a level in the directory path
 Project <- "FluorO2"
 #Temporary RunDate during auditing
-RunDate <- "20210611"
+RunDate <- "20210609"
 DataInO2 <- file.path("..","ImportData", "Optode")
 DataInFRRf <- file.path("..","ImportData", "FRRf")
 DataOut <- file.path("..", "FitData")
@@ -188,20 +188,20 @@ O2SlopeData <- O2SlopeData %>%
          #ActPAR_photonsm2sinter = interpolate(ActPAR_photonsm2s),
          #JVPSIIinter = interpolate(JVPSII_aLHIIminmax)
 
-test <- O2SlopeData %>%
-  filter(CultureID == "MaBe3433",
-         #LR_sO2 < 450,
-        Ex_WL == "590")
-
-test %>%
-   #filter(Dark1sinter == 0) %>%
-   ggplot() +
-  geom_point(aes(x = LR_sO2, y = O2_umolL, colour = Ex_WL)) +
- geom_point(aes(x = LR_sO2, y = ActPARinter, colour = "black")) +
-    geom_point(aes(x = LR_sO2, y = Dark1sinter), colour = "red") +
-  scale_colour_manual(values = Colours_nm) +
-  facet_grid(rows = vars(Ex_WL), cols = vars(CultureID)) +
-  theme_bw()
+# test <- O2SlopeData %>%
+#   filter(CultureID == "MaBe3433",
+#          #LR_sO2 < 450,
+#         Ex_WL == "590")
+# 
+# test %>%
+#    #filter(Dark1sinter == 0) %>%
+#    ggplot() +
+#   geom_point(aes(x = LR_sO2, y = O2_umolL, colour = Ex_WL)) +
+#  geom_point(aes(x = LR_sO2, y = ActPARinter, colour = "black")) +
+#     geom_point(aes(x = LR_sO2, y = Dark1sinter), colour = "red") +
+#   scale_colour_manual(values = Colours_nm) +
+#   facet_grid(rows = vars(Ex_WL), cols = vars(CultureID)) +
+#   theme_bw()
 ```
 
 Check whether ActPARinter worked properly
@@ -221,9 +221,12 @@ O2SlopeData %>%
 #recheck with Max about FRRf file processing to recuperate ActPARinter
 O2SlopeData %>%
   #filter(Dark1sinter == 0) %>%
-  filter(CultureID != "MaBe3432") %>%
+  #filter(CultureID != "MaBe3432") %>%
   #filter(CultureID != "MaBe3431") %>%
   #filter(CultureID != "MaBe3433" | Ex_WL != "590") %>%
+  #filter(CultureID %in% c("MaBe3433", "MaBe3436")) %>%
+  filter(CultureID != "MaBe3437",
+         CultureID != "MaBe3438") |> 
   ggplot() +
   geom_point(aes(x = LR_sO2, y = O2_umolL, colour = Ex_WL)) +
   geom_point(aes(x = LR_sO2, y = ActPARinter), colour = "black") +
@@ -236,13 +239,18 @@ O2SlopeData %>%
 Estimate O2 slopes over LR PAR step ranges
 Be careful with nesting!  Multiple steps at single ActPARinter
 Filter out first 30 s of each ActPARinter set to skip 'induction' phase.
+Filter out last 5 s to avoid Dark1s = 1 rows
 ```{r O2slopes}
 induction_s = 35
 end_s = 175
+
 O2Slopes <- O2SlopeData %>%
   filter(Dark1sinter == 0) %>%
-  filter(CultureID != "MaBe3431") %>%
+  #filter(CultureID != "MaBe3431") %>%
   #filter(CultureID != "MaBe3433" | Ex_WL != "590") %>%
+  #filter(CultureID %in% c("MaBe3433", "MaBe3436")) %>%
+  filter(CultureID != "MaBe3437",
+         CultureID != "MaBe3438") %>%
   nest(O2data = -c(Date, CultureID, Ex_WL, filenameO2, ActPARinter, LR_sFRRfinter)) %>% 
   #nest(O2data = c(Date, AbsTime, LR_sO2, O2_umolL, Temp_C, ActPARinter, filenameO2)) %>%
   mutate(O2lm = map(O2data,  possibly(~ lm(O2_umolL[induction_s:end_s] ~ as.numeric(AbsTime[induction_s:end_s]), data = .x), otherwise = NULL)),

@@ -14,7 +14,7 @@ output:
 csl: plos-one.csl
 ---
 
-##Introduction
+# Introduction
 Compare [O2] to FRRf data.
 
 Fit slopes to O2data over time windows defined by FRRf changes in PAR.
@@ -22,7 +22,7 @@ Trim O2 data nests to remove first 35 rows (~ 35 s) of 180 rows (~ 180 s) to avo
 Compare O2 slopes to FRR ETR estimates.
 
 
-# Set Chunk Options
+## Set Chunk Options
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE)
 knitr::opts_chunk$set(fig.path='Figs/')
@@ -152,7 +152,7 @@ FRRfData %>%
   theme_bw()
 ```
 
-#Try Simple left_join, in case times line up
+## Try Simple left_join, in case times line up
 
 ```{r leftjoin}
 O2SlopeData <- left_join(x = O2Data, y = FRRfData, by = c(c("Date" = "ObsDate"), c("AbsTime" = "ObsTime"), "CultureID", "Ex_WL"), suffix = c("O2", "FRRf"), keep = FALSE) %>%

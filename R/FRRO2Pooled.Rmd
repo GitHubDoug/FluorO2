@@ -155,7 +155,7 @@ O2FRRfPool %>%
 # left_join ChloroDataAver to O2FRRfData
 
 ```{r leftjoin ChloroDataAver to O2FRRfData}
-O2FRRfPool <- left_join(x = O2FRRfData, y = ChloroDataAver, by = c("CultureID", c("ObsDate" = "DATE")), suffix = c("O2FRRf", "Chl"), keep = FALSE)
+O2FRRfPool <- left_join(x = O2FRRfPool, y = ChloroDataAver, by = c("CultureID", c("ObsDate" = "DATE")), suffix = c("O2FRRf", "Chl"), keep = FALSE)
 
 ```
 
@@ -163,8 +163,8 @@ O2FRRfPool <- left_join(x = O2FRRfData, y = ChloroDataAver, by = c("CultureID", 
 O2FRRfPool %>%
   filter(Dark1s == 0) %>%
   ggplot() +
-  geom_point(aes(y = O2evln_O2ls, x = JVPSII_aLHIIminmax, size = Chl_ugL)) +
-  scale_colour_manual(values = Colours_nm) +
+  geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax, size = Chl_ugLChl)) +
+  geom_smooth(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax, size = Chl_ugLChl), method = "lm") +
  facet_grid(rows = vars(Ex_WL), cols = vars(strain)) +
   theme_bw()
 
@@ -173,29 +173,58 @@ O2FRRfPool %>%
   filter(O2evln_O2ls > 0) %>%
   filter(JVPSII_aLHIIminmax > 0) %>%
   ggplot() +
-  geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax, size = Chl_ugL, colour = strain)) +
+  geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax, size = Chl_ugLChl, colour = strain)) +
   facet_grid(rows = vars(Ex_WL)) +
   theme_bw()
 
 ```
 
 ```{r lm PSIIETR_O2}
-#no signifiant effect of strain
+#significant effect of strain
+#significant effect of Ex_WL
+
 tidy(O2FRRfPool %>% 
   filter(Dark1s == 0) %>%
   filter(O2evln_O2ls > 0) %>% 
   filter(JVPSII_aLHIIminmax > 0) %>%
   lm(JVPSII_aLHIIminmax ~ O2evln_O2ls + Ex_WL + strain, data = .))
 
-#significant effect of Ex_WL
-tidy(O2FRRfPool %>% 
+O2FRRfStrainNest <- O2FRRfPool %>%
   filter(Dark1s == 0) %>%
   filter(O2evln_O2ls > 0) %>% 
   filter(JVPSII_aLHIIminmax > 0) %>%
-  lm(JVPSII_aLHIIminmax ~ O2evln_O2ls + Ex_WL, data = .))
+  nest(O2FRRf = -c(strain, Ex_WL)) %>%
+  mutate(PSIIETRO2lm = map(O2FRRf, possibly(~ lm(JVPSII_aLHIIminmax ~ O2evln_O2ls, data = .x), otherwise = NULL)),
+         PSIIETRO2lm_tidy = map(PSIIETRO2lm, possibly(tidy, otherwise = NULL)))
 
+O2FRRfEx_WLNest <- O2FRRfPool %>%
+  filter(Dark1s == 0) %>%
+  filter(O2evln_O2ls > 0) %>% 
+  filter(JVPSII_aLHIIminmax > 0) %>%
+  nest(O2FRRf = -c(Ex_WL)) %>%
+  mutate(PSIIETRO2lm = map(O2FRRf, possibly(~ lm(JVPSII_aLHIIminmax ~ O2evln_O2ls, data = .x), otherwise = NULL)),
+         PSIIETRO2lm_tidy = map(PSIIETRO2lm, possibly(tidy, otherwise = NULL)))
 
-#could alternately 'nest' by Ex_WL to generate single nested dataframe
+O2FRRfEx_WLNo6803Nest <- O2FRRfPool %>%
+  filter(Dark1s == 0) %>%
+  filter(O2evln_O2ls > 0) %>% 
+  filter(JVPSII_aLHIIminmax > 0) %>%
+  filter(strain != "PCC6803") %>%
+  nest(O2FRRf = -c(Ex_WL)) %>%
+  mutate(PSIIETRO2lm = map(O2FRRf, possibly(~ lm(JVPSII_aLHIIminmax ~ O2evln_O2ls, data = .x), otherwise = NULL)),
+         PSIIETRO2lm_tidy = map(PSIIETRO2lm, possibly(tidy, otherwise = NULL)))
+
+O2FRRfEx_WL6803Nest <- O2FRRfPool %>%
+  filter(Dark1s == 0) %>%
+  filter(O2evln_O2ls > 0) %>% 
+  filter(JVPSII_aLHIIminmax > 0) %>%
+  filter(strain == "PCC6803") %>%
+  nest(O2FRRf = -c(Ex_WL)) %>%
+  mutate(PSIIETRO2lm = map(O2FRRf, possibly(~ lm(JVPSII_aLHIIminmax ~ O2evln_O2ls, data = .x), otherwise = NULL)),
+         PSIIETRO2lm_tidy = map(PSIIETRO2lm, possibly(tidy, otherwise = NULL)))
+         
+
+#alternative to 'nest' by Strain & Ex_WL to generate single nested dataframe
 PSIIETR_O2_lm_445 <- tidy(O2FRRfPool %>%
   filter(Dark1s == 0) %>%
   filter(O2evln_O2ls > 0) %>%
@@ -218,13 +247,14 @@ PSIIETR_O2_lm_590
 ```{r PSIIETR_O2_lm_plot}
 #{} around ggplot call allow us to use .$ to set Title etc. to values from filtered dataframe
 #note '.' in ggplot(.)
+
  O2FRRfPool %>%
   filter(Dark1s == 0) %>%
   filter(O2evln_O2ls > 0) %>%
   filter(JVPSII_aLHIIminmax > 0) %>%
   filter(Ex_WL == 445) %>% {
   ggplot(.) +
-  geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax,size = Chl_ugL, colour = strain)) +
+  geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax, size = Chl_ugLChl, colour = strain)) +
   geom_abline(intercept = PSIIETR_O2_lm_445$estimate[1], slope = PSIIETR_O2_lm_445$estimate[2]) +
   geom_abline(intercept = PSIIETR_O2_lm_445$estimate[1] + PSIIETR_O2_lm_445$std.error[1], slope = PSIIETR_O2_lm_445$estimate[2] + PSIIETR_O2_lm_445$std.error[2], linetype = "dashed") +
     geom_abline(intercept = PSIIETR_O2_lm_445$estimate[1] - PSIIETR_O2_lm_445$std.error[1], slope = PSIIETR_O2_lm_445$estimate[2] - PSIIETR_O2_lm_445$std.error[2], linetype = "dashed") +
@@ -238,7 +268,7 @@ PSIIETR_O2_lm_590
   filter(JVPSII_aLHIIminmax > 0) %>%
   filter(Ex_WL == 590) %>% {
   ggplot(.) +
-  geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax,size = Chl_ugL, colour = strain)) +
+  geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax, size = Chl_ugLChl, colour = strain)) +
   geom_abline(intercept = PSIIETR_O2_lm_590$estimate[1], slope = PSIIETR_O2_lm_590$estimate[2]) +
   geom_abline(intercept = PSIIETR_O2_lm_590$estimate[1] + PSIIETR_O2_lm_590$std.error[1], slope = PSIIETR_O2_lm_590$estimate[2] + PSIIETR_O2_lm_590$std.error[2], linetype = "dashed") +
     geom_abline(intercept = PSIIETR_O2_lm_590$estimate[1] - PSIIETR_O2_lm_590$std.error[1], slope = PSIIETR_O2_lm_590$estimate[2] - PSIIETR_O2_lm_590$std.error[2], linetype = "dashed") +
@@ -251,7 +281,7 @@ PSIIETR_O2_lm_590
   filter(JVPSII_aLHIIminmax > 0) %>%
   filter(Ex_WL == 590) %>% {
   ggplot(.) +
-  geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax,size = Chl_ugL, colour = salinity)) +
+  geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax,size = Chl_ugLChl, colour = salinity)) +
   geom_abline(intercept = PSIIETR_O2_lm_590$estimate[1], slope = PSIIETR_O2_lm_590$estimate[2]) +
   geom_abline(intercept = PSIIETR_O2_lm_590$estimate[1] + PSIIETR_O2_lm_590$std.error[1], slope = PSIIETR_O2_lm_590$estimate[2] + PSIIETR_O2_lm_590$std.error[2], linetype = "dashed") +
     geom_abline(intercept = PSIIETR_O2_lm_590$estimate[1] - PSIIETR_O2_lm_590$std.error[1], slope = PSIIETR_O2_lm_590$estimate[2] - PSIIETR_O2_lm_590$std.error[2], linetype = "dashed") +
@@ -265,7 +295,7 @@ O2FRRfPool %>%
   filter(JVPSII_aLHIIminmax > 0) %>%
   #filter(Ex_WL == 590) %>% {
   {ggplot(.) +
-  geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax,size = Chl_ugL, colour = strain, shape = Ex_WL)) +
+  geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax,size = Chl_ugLChl, colour = strain, shape = Ex_WL)) +
   geom_abline(intercept = PSIIETR_O2_lm_590$estimate[1], slope = PSIIETR_O2_lm_590$estimate[2]) +
   geom_abline(intercept = PSIIETR_O2_lm_590$estimate[1] + PSIIETR_O2_lm_590$std.error[1], slope = PSIIETR_O2_lm_590$estimate[2] + PSIIETR_O2_lm_590$std.error[2], linetype = "dashed") +
     geom_abline(intercept = PSIIETR_O2_lm_590$estimate[1] - PSIIETR_O2_lm_590$std.error[1], slope = PSIIETR_O2_lm_590$estimate[2] - PSIIETR_O2_lm_590$std.error[2], linetype = "dashed") +
@@ -274,12 +304,52 @@ O2FRRfPool %>%
     geom_abline(intercept = PSIIETR_O2_lm_445$estimate[1] - PSIIETR_O2_lm_445$std.error[1], slope = PSIIETR_O2_lm_445$estimate[2] - PSIIETR_O2_lm_445$std.error[2], linetype = "dashed") +
   theme_bw()}
 
+#base R extraction of values from list column:
+#O2FRRfEx_WLNest$PSIIETRO2lm_tidy[[1]]$estimate[1]
+#purrr:pluck equivalent:
+#pluck(O2FRRfEx_WLNest,"PSIIETRO2lm_tidy",1,"estimate",1)
+
+ O2FRRfPool %>%
+  filter(Dark1s == 0) %>%
+  filter(O2evln_O2ls > 0) %>%
+  filter(JVPSII_aLHIIminmax > 0) %>%
+  filter(Ex_WL == 445) %>% {
+    ggplot(.) +
+      geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax, size = Chl_ugLChl, colour = strain)) +
+      geom_abline(intercept = pluck(O2FRRfEx_WLNest,"PSIIETRO2lm_tidy",1,"estimate",1), slope = pluck(O2FRRfEx_WLNest,"PSIIETRO2lm_tidy",1,"estimate",2)) +
+      geom_abline(intercept = (pluck(O2FRRfEx_WLNest,"PSIIETRO2lm_tidy",1,"estimate",1) + pluck(O2FRRfEx_WLNest,"PSIIETRO2lm_tidy",1,"std.error",1)), slope = (pluck(O2FRRfEx_WLNest,"PSIIETRO2lm_tidy",1,"estimate",2) + pluck(O2FRRfEx_WLNest,"PSIIETRO2lm_tidy",1,"std.error",2)), linetype = "dashed") +
+      geom_abline(intercept = (pluck(O2FRRfEx_WLNest,"PSIIETRO2lm_tidy",1,"estimate",1) - pluck(O2FRRfEx_WLNest,"PSIIETRO2lm_tidy",1,"std.error",1)), slope = (pluck(O2FRRfEx_WLNest,"PSIIETRO2lm_tidy",1,"estimate",2) - pluck(O2FRRfEx_WLNest,"PSIIETRO2lm_tidy",1,"std.error",2)), linetype = "dashed") + 
+      labs(title =  paste("Ex_WL ", unique(.$Ex_WL), "nm")) +
+      theme_bw()
+  }
+ 
+O2FRRfPool_plot <-  O2FRRfPool %>%
+  filter(Dark1s == 0) %>%
+  filter(O2evln_O2ls > 0) %>%
+  filter(JVPSII_aLHIIminmax > 0) %>%
+  filter(Ex_WL == 445) %>% {
+    ggplot(.) +
+      geom_point(aes(x = O2evln_O2ls, y = JVPSII_aLHIIminmax, size = Chl_ugLChl, colour = strain)) +
+      geom_abline(intercept = pluck(O2FRRfEx_WLNo6803Nest,"PSIIETRO2lm_tidy",1,"estimate",1), slope = pluck(O2FRRfEx_WLNo6803Nest,"PSIIETRO2lm_tidy",1,"estimate",2)) +
+      geom_abline(intercept = (pluck(O2FRRfEx_WLNo6803Nest,"PSIIETRO2lm_tidy",1,"estimate",1) + pluck(O2FRRfEx_WLNo6803Nest,"PSIIETRO2lm_tidy",1,"std.error",1)), slope = (pluck(O2FRRfEx_WLNo6803Nest,"PSIIETRO2lm_tidy",1,"estimate",2) + pluck(O2FRRfEx_WLNo6803Nest,"PSIIETRO2lm_tidy",1,"std.error",2)), linetype = "dashed") +
+      geom_abline(intercept = (pluck(O2FRRfEx_WLNo6803Nest,"PSIIETRO2lm_tidy",1,"estimate",1) - pluck(O2FRRfEx_WLNo6803Nest,"PSIIETRO2lm_tidy",1,"std.error",1)), slope = (pluck(O2FRRfEx_WLNo6803Nest,"PSIIETRO2lm_tidy",1,"estimate",2) - pluck(O2FRRfEx_WLNo6803Nest,"PSIIETRO2lm_tidy",1,"std.error",2)), linetype = "dashed") + 
+      geom_abline(intercept = pluck(O2FRRfEx_WL6803Nest,"PSIIETRO2lm_tidy",1,"estimate",1), slope = pluck(O2FRRfEx_WL6803Nest,"PSIIETRO2lm_tidy",1,"estimate",2)) +
+      geom_abline(intercept = (pluck(O2FRRfEx_WL6803Nest,"PSIIETRO2lm_tidy",1,"estimate",1) + pluck(O2FRRfEx_WL6803Nest,"PSIIETRO2lm_tidy",1,"std.error",1)), slope = (pluck(O2FRRfEx_WL6803Nest,"PSIIETRO2lm_tidy",1,"estimate",2) + pluck(O2FRRfEx_WL6803Nest,"PSIIETRO2lm_tidy",1,"std.error",2)), linetype = "dashed") +
+      geom_abline(intercept = (pluck(O2FRRfEx_WL6803Nest,"PSIIETRO2lm_tidy",1,"estimate",1) - pluck(O2FRRfEx_WL6803Nest,"PSIIETRO2lm_tidy",1,"std.error",1)), slope = (pluck(O2FRRfEx_WL6803Nest,"PSIIETRO2lm_tidy",1,"estimate",2) - pluck(O2FRRfEx_WL6803Nest,"PSIIETRO2lm_tidy",1,"std.error",2)), linetype = "dashed") +
+      labs(title =  paste("Ex_WL ", unique(.$Ex_WL), "nm")) +
+      theme_bw()
+  }
+
+O2FRRfPool_plot
 ```
 
 
 
 
 ```{r save O2FRRfMeta}
+
+ggsave(filename = file.path("Figs", "O2FRRfPool_plot.png"), plot = O2FRRfPool_plot)
+
 saveRDS(O2FRRfPool, file.path(DataOut, paste(Project, "O2FRRfPool.Rds", sep = "_"), fsep = .Platform$file.sep))
 ```
 
